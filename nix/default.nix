@@ -3,7 +3,7 @@ let
   # default nixpkgs
   pkgs = import sources.nixpkgs { };
 
-  # gitignore.nix 
+  # gitignore.nix
   gitignoreSource =
     (import sources."gitignore.nix" { inherit (pkgs) lib; }).gitignoreSource;
 
@@ -49,6 +49,13 @@ in {
             "bash -c 'PATH=${rust}/bin ${rust}/bin/cargo clippy --features strict -- --no-deps'";
           pass_filenames = false;
           files = "\\.rs$";
+        };
+        do-not-commit = {
+          enable = true;
+          name = "If 'DO NOT COMMIT' is in any file, this check fails.";
+          entry = ''bash -c '! grep "DO NOT COMMIT" "$@"' --'';
+          language = "system";
+          excludes = [ "^nix/default.nix" ]; # otherwise this file matches!
         };
       };
       # generated files
