@@ -1,22 +1,21 @@
-{ sources ? import ./sources.nix
-}:
+{ sources ? import ./sources.nix }:
 let
   # default nixpkgs
   pkgs = import sources.nixpkgs { };
 
   # gitignore.nix 
-  gitignoreSource = (import sources."gitignore.nix" { inherit (pkgs) lib; }).gitignoreSource;
+  gitignoreSource =
+    (import sources."gitignore.nix" { inherit (pkgs) lib; }).gitignoreSource;
 
   pre-commit-hooks = (import sources."pre-commit-hooks.nix");
 
   src = gitignoreSource ./..;
-in
-{
+in {
   inherit pkgs src;
 
   # provided by shell.nix
   devTools = {
-    inherit (pkgs) niv;
+    inherit (pkgs) niv nixfmt;
     inherit (pre-commit-hooks) pre-commit;
   };
 
@@ -26,11 +25,11 @@ in
       inherit src;
       hooks = {
         shellcheck.enable = true;
-        nixpkgs-fmt.enable = true;
+        nixfmt.enable = true;
         nix-linter.enable = true;
       };
       # generated files
-      excludes = [ "^nix/sources\.nix$" ];
+      excludes = [ "^nix/sources.nix$" ];
     };
   };
 }
