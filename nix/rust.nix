@@ -2,10 +2,10 @@
 let
   pkgs =
     import sources.nixpkgs { overlays = [ (import sources.nixpkgs-mozilla) ]; };
-  channel = "nightly";
-  date = "2021-09-22";
   extensions = [ "rust-analyzer-preview" "clippy-preview" "rust-src" ];
-  chan = (pkgs.rustChannelOf { inherit channel date; }).rust.override {
-    inherit extensions;
-  };
+  chan = (pkgs.rustChannelOf {
+    # Mozilla overlay has no support for rust-toolchain.toml
+    # https://github.com/mozilla/nixpkgs-mozilla/issues/245
+    rustToolchain = ./../rust-toolchain;
+  }).rust.override { inherit extensions; };
 in chan
