@@ -10,6 +10,13 @@ let
   pre-commit-hooks = (import sources."pre-commit-hooks.nix");
 
   src = gitignoreSource ./..;
+
+  rust = import ./rust.nix { inherit sources; };
+
+  naersk = pkgs.callPackage sources.naersk {
+    rustc = rust;
+    cargo = rust;
+  };
 in {
   inherit pkgs src;
 
@@ -17,6 +24,7 @@ in {
   devTools = {
     inherit (pkgs) niv nixfmt;
     inherit (pre-commit-hooks) pre-commit;
+    inherit rust;
   };
 
   # to be built by github actions
@@ -31,5 +39,13 @@ in {
       # generated files
       excludes = [ "^nix/sources.nix$" ];
     };
+  };
+
+  # TODO: get from Cargo.toml?
+  crate = naersk.buildPackage {
+    inherit src;
+
+    pname = "scalingsnapshots";
+    version = "0.1";
   };
 }

@@ -1,4 +1,16 @@
 {
+    "naersk": {
+        "branch": "master",
+        "description": "Build rust crates in Nix. No configuration, no code generation, no IFD. Sandbox friendly. [maintainer: @nmattia]",
+        "homepage": "",
+        "owner": "nix-community",
+        "repo": "naersk",
+        "rev": "ee7edec50b49ab6d69b06d62f1de554efccb1ccd",
+        "sha256": "06g37l34hzi81lc7hmk91mzapsa1iak7yi3agxgdzfc69qk9wp17",
+        "type": "tarball",
+        "url": "https://github.com/nix-community/naersk/archive/ee7edec50b49ab6d69b06d62f1de554efccb1ccd.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
     "niv": {
         "branch": "master",
         "description": "Easy dependency management for Nix projects",
@@ -21,6 +33,18 @@
         "sha256": "06k21wbyhhvq2f1xczszh3c2934p0m02by3l2ixvd6nkwrqklax7",
         "type": "tarball",
         "url": "https://github.com/NixOS/nixpkgs/archive/eb73405ecceb1dc505b7cbbd234f8f94165e2696.tar.gz",
+        "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
+    },
+    "nixpkgs-mozilla": {
+        "branch": "master",
+        "description": "Mozilla overlay for Nixpkgs.",
+        "homepage": "",
+        "owner": "mozilla",
+        "repo": "nixpkgs-mozilla",
+        "rev": "0510159186dd2ef46e5464484fbdf119393afa58",
+        "sha256": "1c6r5ldkh71v6acsfhni7f9sxvi7xrqzshcwd8w0hl2rrqyzi58w",
+        "type": "tarball",
+        "url": "https://github.com/mozilla/nixpkgs-mozilla/archive/0510159186dd2ef46e5464484fbdf119393afa58.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pre-commit-hooks.nix": {
