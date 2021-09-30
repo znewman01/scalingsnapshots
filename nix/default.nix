@@ -17,14 +17,25 @@ let
     rustc = rust;
     cargo = rust;
   };
+
+  # if we try to gitignore this source we get infinite recursion; it gets
+  # cleaned in poetry2nix
+  analysisPath = ./../analysis;
+  poetryArgs = {
+    projectDir = analysisPath;
+    python = pkgs.python38;
+  };
 in {
   inherit pkgs src rust;
 
   # provided by shell.nix
   devTools = {
-    inherit (pkgs) niv nixfmt nix-linter;
+    inherit (pkgs) niv nixfmt nix-linter git;
     inherit (pre-commit-hooks) pre-commit;
     inherit rust;
+    pythonEnv = pkgs.poetry2nix.mkPoetryEnv poetryArgs;
+    inherit (pkgs.python38Packages) poetry;
+    inherit (pkgs.nodePackages) pyright;
   };
 
   # to be built by github actions
@@ -72,4 +83,7 @@ in {
 
     doCheck = true; # run `cargo test`
   };
+
+  analysis = pkgs.poetry2nix.mkPoetryApplication
+    (poetryArgs // { checkPhase = "pytest"; });
 }
