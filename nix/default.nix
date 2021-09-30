@@ -46,21 +46,25 @@ in rec {
         shellcheck.enable = true;
         nixfmt.enable = true;
         nix-linter.enable = true;
-        black.enable = true;
         # Really should override pre-commit-hooks tools to use my Rust version rather than cloning.
+        my-black = {
+          name = "black";
+          entry = "${pkgs.python3Packages.black}/bin/black";
+          types = [ "file" "python" ];
+        };
         my-rustfmt = {
           enable = true;
           entry =
             "bash -c 'PATH=${rust}/bin ${rust}/bin/cargo fmt -- --check --color always'";
           pass_filenames = false;
-          files = "\\.rs$";
+          types = [ "file" "rust" ];
         };
         my-clippy = {
           enable = true;
           entry =
             "bash -c 'PATH=${rust}/bin ${rust}/bin/cargo clippy --features strict -- --no-deps'";
           pass_filenames = false;
-          files = "\\.rs$";
+          types = [ "file" "rust" ];
         };
         do-not-commit = {
           enable = true;
@@ -95,5 +99,17 @@ in rec {
     # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
     buildInputs = [ ci.pre-commit-check ];
     paths = [ crate analysis ];
+  };
+
+  run = pkgs.stdenv.mkDerivation {
+    inherit src;
+
+    name = "run-ssnap";
+    installPhase = ''
+      PATH=${scalingsnapshots}/bin/:$PATH
+      mkdir -p $out
+
+      scalingsnapshots | ssanalyze --input - --output $out/
+    '';
   };
 }
