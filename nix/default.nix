@@ -9,8 +9,6 @@ let
 
   pre-commit-hooks = (import sources."pre-commit-hooks.nix");
 
-  src = gitignoreSource ./..;
-
   rust = import ./rust.nix { inherit sources; };
 
   naersk = pkgs.callPackage sources.naersk {
@@ -25,8 +23,10 @@ let
     projectDir = analysisPath;
     python = pkgs.python38;
   };
-in {
-  inherit pkgs src rust;
+in rec {
+  inherit pkgs rust;
+
+  src = gitignoreSource ./..;
 
   # provided by shell.nix
   devTools = {
@@ -87,4 +87,13 @@ in {
 
   analysis = pkgs.poetry2nix.mkPoetryApplication
     (poetryArgs // { checkPhase = "pytest"; });
+
+  # The full build: simulator program and Python analysis tools.
+  scalingsnapshots = pkgs.buildEnv {
+    name = "scalingsnapshots";
+    # TODO: should be nativeBuildInputs once it lands in nixpkgs
+    # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
+    buildInputs = [ ci.pre-commit-check ];
+    paths = [ crate analysis ];
+  };
 }
