@@ -46,6 +46,7 @@ in {
         shellcheck.enable = true;
         nixfmt.enable = true;
         nix-linter.enable = true;
+        black.enable = true;
         # Really should override pre-commit-hooks tools to use my Rust version rather than cloning.
         my-rustfmt = {
           enable = true;
