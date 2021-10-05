@@ -24,7 +24,7 @@ in rec {
 
   # provided by shell.nix
   devTools = {
-    inherit (pkgs) niv nixfmt nix-linter git;
+    inherit (pkgs) niv nixfmt nix-linter git age;
     inherit (pre-commit-hooks) pre-commit;
     inherit rust;
     pythonEnvAnalysis = pkgs.poetry2nix.mkPoetryEnv {
