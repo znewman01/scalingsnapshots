@@ -1,4 +1,4 @@
 status = [
     "tests"
 ]
-use_codeowners = true
+use_codeowners = false  # not needed on 2 person project!
