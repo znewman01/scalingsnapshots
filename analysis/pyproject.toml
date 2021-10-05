@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "scalingsnapshots"
+version = "0.1.0"
+description = "Analysis for scalingsnapshots"
+authors = ["Zachary Newman", "Marina Moore"]
+license = "MIT"
+
+[tool.poetry.scripts]
+ssanalyze = 'scalingsnapshots.__main__:main'
+
+[tool.poetry.dependencies]
+python = "^3.8"
+black = "^21.9b0"
+matplotlib = "^3.4.3"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[build-system]
+requires = ["poetry-core>=1.1.0"]
+build-backend = "poetry.core.masonry.api"
