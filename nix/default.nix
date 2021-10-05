@@ -16,13 +16,7 @@ let
     cargo = rust;
   };
 
-  # if we try to gitignore this source we get infinite recursion; it gets
-  # cleaned in poetry2nix
-  analysisPath = ./../analysis;
-  poetryArgs = {
-    projectDir = analysisPath;
-    python = pkgs.python38;
-  };
+  python = pkgs.python38;
 in rec {
   inherit pkgs rust;
 
@@ -33,7 +27,14 @@ in rec {
     inherit (pkgs) niv nixfmt nix-linter git;
     inherit (pre-commit-hooks) pre-commit;
     inherit rust;
-    pythonEnv = pkgs.poetry2nix.mkPoetryEnv poetryArgs;
+    pythonEnvAnalysis = pkgs.poetry2nix.mkPoetryEnv {
+      inherit python;
+      projectDir = ./../analysis;
+    };
+    pythonEnvLogs = pkgs.poetry2nix.mkPoetryEnv {
+      inherit python;
+      projectDir = ./../logparser;
+    };
     inherit (pkgs.python38Packages) poetry;
     inherit (pkgs.nodePackages) pyright;
   };
@@ -89,8 +90,17 @@ in rec {
     doCheck = true; # run `cargo test`
   };
 
-  analysis = pkgs.poetry2nix.mkPoetryApplication
-    (poetryArgs // { checkPhase = "pytest"; });
+  analysis = pkgs.poetry2nix.mkPoetryApplication {
+    inherit python;
+    projectDir = ./../analysis;
+    checkPhase = "pytest";
+  };
+
+  logparser = pkgs.poetry2nix.mkPoetryApplication {
+    inherit python;
+    projectDir = ./../logparser;
+    checkPhase = "pytest";
+  };
 
   # The full build: simulator program and Python analysis tools.
   scalingsnapshots = pkgs.buildEnv {
@@ -98,7 +108,7 @@ in rec {
     # TODO: should be nativeBuildInputs once it lands in nixpkgs
     # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
     buildInputs = [ ci.pre-commit-check ];
-    paths = [ crate analysis ];
+    paths = [ crate analysis logparser ];
   };
 
   run = pkgs.stdenv.mkDerivation {
@@ -109,6 +119,7 @@ in rec {
       PATH=${scalingsnapshots}/bin/:$PATH
       mkdir -p $out
 
+      sslogs > $out/log
       scalingsnapshots | ssanalyze --input - --output $out/
     '';
   };
