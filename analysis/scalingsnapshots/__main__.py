@@ -30,11 +30,11 @@ def main(argv: Optional[List[str]] = None):
         "--input",
         help="The input data file to analyze (default STDIN)",
         type=argparse.FileType("r"),
-        required=True,
+        default=sys.stdin,
     )
     parser.add_argument(
         "--output",
-        help="Path to write analysis output.",
+        help="Directory to write analysis output.",
         type=Path,
         required=True,
     )
