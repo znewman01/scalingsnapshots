@@ -13,3 +13,4 @@ license = "MIT"
 strict = []
 
 [dependencies]
+clap = "3.0.0-beta.4"
