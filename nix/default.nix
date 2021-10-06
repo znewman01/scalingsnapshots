@@ -111,6 +111,8 @@ in rec {
     paths = [ crate analysis logparser ];
   };
 
+  data = pkgs.copyPathToStore ./../data;
+
   run = pkgs.stdenv.mkDerivation {
     inherit src;
 
@@ -119,8 +121,10 @@ in rec {
       PATH=${scalingsnapshots}/bin/:$PATH
       mkdir -p $out
 
-      sslogs > $out/log
-      scalingsnapshots | ssanalyze --input - --output $out/
+      cat ${data}/fakedata.json \
+          | sslogs --log-type identity > $out/processed-data.json
+      scalingsnapshots \
+          | ssanalyze --output $out/
     '';
   };
 }
