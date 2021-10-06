@@ -13,5 +13,4 @@ jobs:
         name: znewman01
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
     - run: nix-shell --run "echo Shell works."
-    - run: nix-build
-    - run: ./result/bin/scalingsnapshots
+    - run: nix build -f nix run
