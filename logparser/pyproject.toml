@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "scalingsnapshots-logs"
+name = "sslogs"
 version = "0.1.0"
 description = "Log parser for scalingsnapshots"
 authors = ["Zachary Newman", "Marina Moore"]
 license = "MIT"
 
 [tool.poetry.scripts]
-sslogs = 'scalingsnapshots_logs.__main__:main'
+sslogs = 'sslogs.__main__:main'
 
 [tool.poetry.dependencies]
 python = "^3.8"

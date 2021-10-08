@@ -62,8 +62,14 @@ in rec {
         };
         my-clippy = {
           enable = true;
-          entry =
-            "bash -c 'PATH=${rust}/bin ${rust}/bin/cargo clippy --features strict -- --no-deps'";
+          entry = ''
+            bash -c ' \
+               cp -r ${builtins.head sssim.builtDependencies}/.cargo/ .cargo
+               CARGO_HOME=.cargo \
+               PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
+               cargo clippy --release --features strict --offline -- --no-deps
+            '
+          '';
           pass_filenames = false;
           types = [ "file" "rust" ];
         };
@@ -80,23 +86,27 @@ in rec {
     };
   };
 
-  # TODO: get from Cargo.toml?
-  crate = naersk.buildPackage {
+  sssim = naersk.buildPackage {
     inherit src;
 
+    # TODO: get from Cargo.toml?
     pname = "scalingsnapshots";
     version = "0.1";
 
     doCheck = true; # run `cargo test`
+    # hacks for making clippy work in CI
+    postInstall = ''
+      cp -r $CARGO_HOME $out/.cargo
+    '';
   };
 
-  analysis = pkgs.poetry2nix.mkPoetryApplication {
+  ssanalyze = pkgs.poetry2nix.mkPoetryApplication {
     inherit python;
     projectDir = ./../analysis;
     checkPhase = "pytest";
   };
 
-  logparser = pkgs.poetry2nix.mkPoetryApplication {
+  sslogs = pkgs.poetry2nix.mkPoetryApplication {
     inherit python;
     projectDir = ./../logparser;
     checkPhase = "pytest";
@@ -108,8 +118,10 @@ in rec {
     # TODO: should be nativeBuildInputs once it lands in nixpkgs
     # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
     buildInputs = [ ci.pre-commit-check ];
-    paths = [ crate analysis logparser ];
+    paths = [ sssim ssanalyze sslogs ];
   };
+
+  data = pkgs.copyPathToStore ./../data;
 
   run = pkgs.stdenv.mkDerivation {
     inherit src;
@@ -119,8 +131,10 @@ in rec {
       PATH=${scalingsnapshots}/bin/:$PATH
       mkdir -p $out
 
-      sslogs > $out/log
-      scalingsnapshots | ssanalyze --input - --output $out/
+      cat ${data}/fakedata.json \
+          | sslogs --log-type identity > $out/processed-data.json
+      sssim \
+          | ssanalyze --output $out/
     '';
   };
 }
