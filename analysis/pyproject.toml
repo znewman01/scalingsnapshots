@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "scalingsnapshots"
+name = "ssanalyze"
 version = "0.1.0"
 description = "Analysis for scalingsnapshots"
 authors = ["Zachary Newman", "Marina Moore"]
 license = "MIT"
 
 [tool.poetry.scripts]
-ssanalyze = 'scalingsnapshots.__main__:main'
+ssanalyze = 'ssanalyze.__main__:main'
 
 [tool.poetry.dependencies]
 python = "^3.8"

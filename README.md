@@ -14,7 +14,7 @@ To compile everything:
 
 ``` shell
 $ nix build
-$ ./result/bin/scalingsnapshots  # the simulator binary, compiled from Rust
+$ ./result/bin/sssim  # the simulator binary, compiled from Rust
 Hello, world!
 $ ./result/bin/ssanalyze --help  # the analysis Python script, for charts etc.
 ```
@@ -49,7 +49,9 @@ one of:
 ``` shell
 $ poetry shell  # create a new shell with appropriate virtualenv
 $ poetry run pytest  # run tests
-$ poetry run python -m scalingsnapshots -h # run help
+$ poetry run python -m ssanalyze -h # run help
 ```
+
+(And analogously for `logparser/` directory and `sslogs`.)
 
 [`poetry`]: https://python-poetry.org/

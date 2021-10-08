@@ -64,7 +64,7 @@ in rec {
           enable = true;
           entry = ''
             bash -c ' \
-               cp -r ${builtins.head crate.builtDependencies}/.cargo/ .cargo
+               cp -r ${builtins.head sssim.builtDependencies}/.cargo/ .cargo
                CARGO_HOME=.cargo \
                PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
                cargo clippy --release --features strict --offline -- --no-deps
@@ -86,10 +86,10 @@ in rec {
     };
   };
 
-  # TODO: get from Cargo.toml?
-  crate = naersk.buildPackage {
+  sssim = naersk.buildPackage {
     inherit src;
 
+    # TODO: get from Cargo.toml?
     pname = "scalingsnapshots";
     version = "0.1";
 
@@ -100,13 +100,13 @@ in rec {
     '';
   };
 
-  analysis = pkgs.poetry2nix.mkPoetryApplication {
+  ssanalyze = pkgs.poetry2nix.mkPoetryApplication {
     inherit python;
     projectDir = ./../analysis;
     checkPhase = "pytest";
   };
 
-  logparser = pkgs.poetry2nix.mkPoetryApplication {
+  sslogs = pkgs.poetry2nix.mkPoetryApplication {
     inherit python;
     projectDir = ./../logparser;
     checkPhase = "pytest";
@@ -118,7 +118,7 @@ in rec {
     # TODO: should be nativeBuildInputs once it lands in nixpkgs
     # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
     buildInputs = [ ci.pre-commit-check ];
-    paths = [ crate analysis logparser ];
+    paths = [ sssim ssanalyze sslogs ];
   };
 
   data = pkgs.copyPathToStore ./../data;
@@ -133,7 +133,7 @@ in rec {
 
       cat ${data}/fakedata.json \
           | sslogs --log-type identity > $out/processed-data.json
-      scalingsnapshots \
+      sssim \
           | ssanalyze --output $out/
     '';
   };

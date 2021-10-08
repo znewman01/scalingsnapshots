@@ -1,4 +1,4 @@
-from scalingsnapshots_logs import __version__
+from ssanalyze import __version__
 
 
 def test_version():
