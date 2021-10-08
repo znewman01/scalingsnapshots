@@ -62,8 +62,14 @@ in rec {
         };
         my-clippy = {
           enable = true;
-          entry =
-            "bash -c 'PATH=${rust}/bin ${rust}/bin/cargo clippy --features strict -- --no-deps'";
+          entry = ''
+            bash -c ' \
+               cp -r ${builtins.head crate.builtDependencies}/.cargo/ .cargo
+               CARGO_HOME=.cargo \
+               PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
+               cargo clippy --release --features strict --offline -- --no-deps
+            '
+          '';
           pass_filenames = false;
           types = [ "file" "rust" ];
         };
@@ -88,6 +94,10 @@ in rec {
     version = "0.1";
 
     doCheck = true; # run `cargo test`
+    # hacks for making clippy work in CI
+    postInstall = ''
+      cp -r $CARGO_HOME $out/.cargo
+    '';
   };
 
   analysis = pkgs.poetry2nix.mkPoetryApplication {
