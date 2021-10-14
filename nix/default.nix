@@ -4,8 +4,7 @@ let
   pkgs = import sources.nixpkgs { };
 
   # gitignore.nix
-  gitignoreSource =
-    (import sources."gitignore.nix" { inherit (pkgs) lib; }).gitignoreSource;
+  gitignore = (import sources."gitignore.nix" { inherit (pkgs) lib; });
 
   pre-commit-hooks = (import sources."pre-commit-hooks.nix");
 
@@ -20,7 +19,7 @@ let
 in rec {
   inherit pkgs rust;
 
-  src = gitignoreSource ./..;
+  src = gitignore.gitignoreSource ./..;
 
   # provided by shell.nix
   devTools = {
@@ -86,8 +85,29 @@ in rec {
     };
   };
 
-  sssim = naersk.buildPackage {
-    inherit src;
+  sssim = let
+    isRustFile = src:
+      let
+        # need to curry for memoization to work
+        srcNotIgnored = gitignore.gitignoreFilter src;
+      in path: type:
+      # not gitignored
+      srcNotIgnored path type
+      # if in the root, must be one of the given files:
+      && ((builtins.dirOf path) != builtins.toString ./.. # in the root
+        || builtins.elem (builtins.baseNameOf path) [
+          "Cargo.toml"
+          "Cargo.lock"
+          "rust-toolchain"
+          "src"
+        ]);
+    rustSrc = pkgs.lib.cleanSourceWith rec {
+      src = ./..;
+      filter = isRustFile src;
+      name = "rust-source";
+    };
+  in naersk.buildPackage {
+    src = rustSrc;
 
     # TODO: get from Cargo.toml?
     pname = "scalingsnapshots";
