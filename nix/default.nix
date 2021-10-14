@@ -151,9 +151,10 @@ in rec {
       # Check that our fakedata matches the schema.
       diff ${data}/fakedata.json <(dummy_logs)
 
+      # Try running the entire pipeline
       cat ${data}/fakedata.json \
-          | sslogs --log-type identity > $out/processed-data.json
-      sssim \
+          | sslogs --log-type identity  \
+          | sssim \
           | ssanalyze --output $out/
     '';
   };
