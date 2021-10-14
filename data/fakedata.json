@@ -1,1 +1,3 @@
-[{}]
+{"Download":{"user":1,"files":[{"package":"libc","release":"0.5","file":"libc-0.5.tar.gz"},{"package":"libc","release":"0.5","file":"libc-0.5-docs.tar.gz"}]}}
+{"RefreshMetadata":{"user":2}}
+{"Publish":{"package":"openssl","release":{"version":"1.0.0","files":[{"name":"openssl-1.0.0-sparc.tar.gz","length":1000},{"name":"openssl-1.0.0-amd64.tar.gz","length":2000}]}}}

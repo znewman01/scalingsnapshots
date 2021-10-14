@@ -131,6 +131,9 @@ in rec {
       PATH=${scalingsnapshots}/bin/:$PATH
       mkdir -p $out
 
+      # Check that our fakedata matches the schema.
+      diff ${data}/fakedata.json <(dummy_logs)
+
       cat ${data}/fakedata.json \
           | sslogs --log-type identity > $out/processed-data.json
       sssim \
