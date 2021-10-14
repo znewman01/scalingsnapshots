@@ -76,7 +76,7 @@ in rec {
         do-not-commit = {
           enable = true;
           name = "If 'DO NOT COMMIT' is in any file, this check fails.";
-          entry = ''bash -c '! grep "DO NOT COMMIT" "$@"' --'';
+          entry = ''bash -c '! grep -E "DO NOT (COMMIT|SUBMIT)" "$@"' --'';
           language = "system";
           excludes = [ "^nix/default.nix" ]; # otherwise this file matches!
         };
@@ -115,9 +115,6 @@ in rec {
   # The full build: simulator program and Python analysis tools.
   scalingsnapshots = pkgs.buildEnv {
     name = "scalingsnapshots";
-    # TODO: should be nativeBuildInputs once it lands in nixpkgs
-    # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
-    buildInputs = [ ci.pre-commit-check ];
     paths = [ sssim ssanalyze sslogs ];
   };
 
