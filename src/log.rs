@@ -8,6 +8,7 @@
 //!
 //! The TUF concepts are a little different. It's up to the Repository
 //! Simulator to translate between them.
+use chrono::prelude::*;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
@@ -133,4 +134,45 @@ pub enum Action {
         package: PackageId,
         release: PackageRelease,
     },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LogEntry {
+    timestamp: DateTime<Utc>,
+    action: Action,
+}
+
+impl LogEntry {
+    pub fn new(timestamp: DateTime<Utc>, action: Action) -> Self {
+        Self { timestamp, action }
+    }
+}
+
+#[derive(Debug)]
+pub struct Log(Vec<LogEntry>);
+
+impl From<Vec<LogEntry>> for Log {
+    fn from(entries: Vec<LogEntry>) -> Self {
+        // Log entries must be in sorted order by timestamp.
+        let mut last: Option<DateTime<Utc>> = None;
+        for entry in &entries {
+            if let Some(last) = last {
+                if entry.timestamp < last {
+                    panic!("Invalid log!");
+                }
+            }
+            last = Some(entry.timestamp);
+        }
+
+        Self(entries)
+    }
+}
+
+impl IntoIterator for Log {
+    type Item = LogEntry;
+    type IntoIter = <Vec<LogEntry> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
