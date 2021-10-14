@@ -4,8 +4,7 @@ let
   pkgs = import sources.nixpkgs { };
 
   # gitignore.nix
-  gitignoreSource =
-    (import sources."gitignore.nix" { inherit (pkgs) lib; }).gitignoreSource;
+  gitignore = (import sources."gitignore.nix" { inherit (pkgs) lib; });
 
   pre-commit-hooks = (import sources."pre-commit-hooks.nix");
 
@@ -20,7 +19,7 @@ let
 in rec {
   inherit pkgs rust;
 
-  src = gitignoreSource ./..;
+  src = gitignore.gitignoreSource ./..;
 
   # provided by shell.nix
   devTools = {
@@ -76,7 +75,7 @@ in rec {
         do-not-commit = {
           enable = true;
           name = "If 'DO NOT COMMIT' is in any file, this check fails.";
-          entry = ''bash -c '! grep "DO NOT COMMIT" "$@"' --'';
+          entry = ''bash -c '! grep -E "DO NOT (COMMIT|SUBMIT)" "$@"' --'';
           language = "system";
           excludes = [ "^nix/default.nix" ]; # otherwise this file matches!
         };
@@ -86,8 +85,29 @@ in rec {
     };
   };
 
-  sssim = naersk.buildPackage {
-    inherit src;
+  sssim = let
+    isRustFile = src:
+      let
+        # need to curry for memoization to work
+        srcNotIgnored = gitignore.gitignoreFilter src;
+      in path: type:
+      # not gitignored
+      srcNotIgnored path type
+      # if in the root, must be one of the given files:
+      && ((builtins.dirOf path) != builtins.toString ./.. # in the root
+        || builtins.elem (builtins.baseNameOf path) [
+          "Cargo.toml"
+          "Cargo.lock"
+          "rust-toolchain"
+          "src"
+        ]);
+    rustSrc = pkgs.lib.cleanSourceWith rec {
+      src = ./..;
+      filter = isRustFile src;
+      name = "rust-source";
+    };
+  in naersk.buildPackage {
+    src = rustSrc;
 
     # TODO: get from Cargo.toml?
     pname = "scalingsnapshots";
@@ -115,9 +135,6 @@ in rec {
   # The full build: simulator program and Python analysis tools.
   scalingsnapshots = pkgs.buildEnv {
     name = "scalingsnapshots";
-    # TODO: should be nativeBuildInputs once it lands in nixpkgs
-    # https://github.com/NixOS/nixpkgs/commit/4f6ec19dbc322d7ce8df9108b76e0db79682353e
-    buildInputs = [ ci.pre-commit-check ];
     paths = [ sssim ssanalyze sslogs ];
   };
 
@@ -131,9 +148,13 @@ in rec {
       PATH=${scalingsnapshots}/bin/:$PATH
       mkdir -p $out
 
+      # Check that our fakedata matches the schema.
+      diff ${data}/fakedata.json <(dummy_logs)
+
+      # Try running the entire pipeline
       cat ${data}/fakedata.json \
-          | sslogs --log-type identity > $out/processed-data.json
-      sssim \
+          | sslogs --log-type identity  \
+          | sssim \
           | ssanalyze --output $out/
     '';
   };
