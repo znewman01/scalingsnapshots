@@ -9,13 +9,25 @@ BigQuery.
 import argparse
 
 from typing import Any
+from google.cloud import bigquery
 
 import sslogs.args
+
+# https://packaging.python.org/guides/analyzing-pypi-package-downloads/
+# Table: bigquery-public-data.pypi.file_downloads
+# Columns:
+# - timestamp, country_code, url, project, tls_protocol, tls_cipher
+# - file.*: filename, project, version, type
+# - details.*: installer.*, python, implementation.*, distro.*, system.*, details.cpu, details.openssl_version, details.setuptools_version
+_QUERY = "SELECT 1"
 
 
 def main(args: argparse.Namespace):
     output: io.TextIOBase = args.output
-    output.write("foo")
+    client = bigquery.Client()
+    job = client.query(_QUERY)
+    for row in job.result():
+        output.write(f"{row}\n")
 
 
 def add_args(parser: Any):
