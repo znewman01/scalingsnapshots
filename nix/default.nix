@@ -153,7 +153,7 @@ in rec {
 
       # Try running the entire pipeline
       cat ${data}/fakedata.json \
-          | sslogs --log-type identity  \
+          | sslogs identity \
           | sssim \
           | ssanalyze --output $out/
     '';
