@@ -155,7 +155,7 @@ in rec {
       cat ${data}/fakedata.json \
           | sslogs identity \
           | sssim \
-          | ssanalyze --output $out/
+          | ssanalyze --non-sensitive-data --output $out/
     '';
   };
 }
