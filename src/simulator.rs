@@ -1,4 +1,4 @@
-use crate::log::LogEntry;
+use crate::log::Entry;
 use chrono::Duration;
 use serde::{Serialize, Serializer};
 
@@ -36,7 +36,7 @@ impl Simulator {
         Self {}
     }
 
-    pub fn process(&self, _entry: &LogEntry) -> ResourceUsage {
+    pub fn process(&self, _entry: &Entry) -> ResourceUsage {
         ResourceUsage {
             server_compute: Duration::zero(),
             user_compute: Duration::zero(),

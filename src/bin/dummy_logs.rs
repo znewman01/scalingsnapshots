@@ -2,11 +2,11 @@ use std::io::{self, Write};
 
 use chrono::prelude::*;
 
-use sssim::log::{Action, File, FileRequest, FilesRequest, Log, LogEntry, PackageRelease, UserId};
+use sssim::log::{Action, Entry, File, FileRequest, FilesRequest, Log, PackageRelease, UserId};
 
 fn main() {
     let log = Log::from(vec![
-        LogEntry::new(
+        Entry::new(
             Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
             Action::Download {
                 user: UserId::from(1),
@@ -24,13 +24,13 @@ fn main() {
                 ]),
             },
         ),
-        LogEntry::new(
+        Entry::new(
             Utc.ymd(1970, 1, 1).and_hms(0, 0, 1),
             Action::RefreshMetadata {
                 user: UserId::from(2),
             },
         ),
-        LogEntry::new(
+        Entry::new(
             Utc.ymd(1970, 1, 1).and_hms(0, 0, 2),
             Action::Publish {
                 package: "openssl".to_string().into(),

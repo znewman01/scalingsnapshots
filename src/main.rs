@@ -7,7 +7,7 @@ use clap::{
 };
 use serde::Serialize;
 
-use sssim::log::LogEntry;
+use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
 
 #[derive(Clap)]
@@ -18,7 +18,7 @@ struct Args {}
 
 #[derive(Debug, Serialize)]
 struct Event {
-    entry: LogEntry,
+    entry: Entry,
     result: ResourceUsage,
 }
 
@@ -28,7 +28,7 @@ fn main() {
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));
-        let entry: LogEntry = result.expect("bad log entry");
+        let entry: Entry = result.expect("bad log entry");
         let usage = simulator.process(&entry);
         let event = Event {
             entry,
