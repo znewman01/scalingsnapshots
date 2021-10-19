@@ -116,7 +116,7 @@ impl From<Vec<FileRequest>> for FilesRequest {
 }
 
 impl FilesRequest {
-    /// Return a list of unique package IDs in this FilesRequest.
+    /// Return a list of unique package IDs in this `FilesRequest`.
     pub fn packages(&self) -> Vec<PackageId> {
         self.0.iter().map(|r| r.package.clone()).unique().collect()
     }
