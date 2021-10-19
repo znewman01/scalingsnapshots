@@ -1,3 +1,4 @@
+#![allow(dead_code)] // TODO: fix once we're actually using this
 //! Concepts for log inputs.
 //!
 //! Most package repos have a model that involves the concepts:
@@ -116,7 +117,7 @@ impl From<Vec<FileRequest>> for FilesRequest {
 
 impl FilesRequest {
     /// Return a list of unique package IDs in this FilesRequest.
-    fn packages(&self) -> Vec<PackageId> {
+    pub fn packages(&self) -> Vec<PackageId> {
         self.0.iter().map(|r| r.package.clone()).unique().collect()
     }
 }

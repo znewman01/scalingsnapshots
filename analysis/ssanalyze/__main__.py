@@ -12,6 +12,9 @@ def dump_log(data: str, output_dir: Path):
 
 
 def plot(data: str, path: Path):
+    count = len(data.split("\n"))
+    title = f"hello {count}"
+
     plt.title(title)
     plt.plot([1, 2, 2, 4])
     plt.savefig(path / "hello.png")
