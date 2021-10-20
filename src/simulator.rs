@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use crate::authenticator::Snapshot;
 use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
 use crate::Authenticator;
 use chrono::Duration;
@@ -35,6 +38,17 @@ pub struct ResourceUsage {
     storage: DataSize,
 }
 
+fn time<F, V>(f: F) -> (V, Duration)
+where
+    F: FnOnce() -> V,
+{
+    let mut value = None;
+    let duration = Duration::span(|| {
+        value.replace(f());
+    });
+    (value.expect("definitely populated"), duration)
+}
+
 /// A simulator for a secure software repository.
 ///
 /// Handles what we care about (timing, bandwidth, storage) and ignores what we
@@ -43,15 +57,22 @@ pub struct ResourceUsage {
 /// TODO: user state?
 /// TODO: manage TUF repo?
 #[derive(Debug)]
-pub struct Simulator<A: Authenticator> {
+pub struct Simulator<S: Snapshot, A: Authenticator<S>> {
     #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
+    snapshots: HashMap<UserId, S>,
 }
 
 #[allow(unused_variables)] // TODO: remove once this is actually implemented
-impl<A: Authenticator> Simulator<A> {
+impl<S: Snapshot, A: Authenticator<S>> Simulator<S, A>
+where
+    S: Default,
+{
     pub fn new(authenticator: A) -> Self {
-        Self { authenticator }
+        Self {
+            authenticator,
+            snapshots: HashMap::default(),
+        }
     }
 
     #[allow(dead_code)] // TODO
@@ -72,19 +93,28 @@ impl<A: Authenticator> Simulator<A> {
         }
     }
 
-    #[allow(dead_code)] // TODO
-    fn process_refresh_metadata(&self, user: UserId) -> ResourceUsage {
-        // 1. server gives client new metadata, along with (optional) rollback proof
-        //    - time this
-        //    - measure proof bandwidth
-        // 2. user verifies rollback (optional)
-        //    - measure user time
-        // 3. measure storage size? (shouldn't change)
+    fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
+        // Get the snapshot ID for the user's current snapshot.
+        let old_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let (old_snapshot_id, user_compute_id) = time(|| old_snapshot.id());
+
+        // Answer the update metadata server-side.
+        let (new_snapshot, server_compute) =
+            time(|| self.authenticator.refresh_metadata(&old_snapshot_id));
+        let bandwidth = DataSize::bytes(0); // TODO: implement on new_snapshot
+        let storage = DataSize::bytes(0); // TODO: implement on Authenticator
+
+        // Check the new snapshot for rollbacks and store it.
+        let user_compute_verify = Duration::span(|| {
+            assert!(old_snapshot.check_no_rollback(&new_snapshot));
+        });
+        self.snapshots.insert(user, new_snapshot);
+
         ResourceUsage {
-            server_compute: Duration::zero(),
-            user_compute: Duration::zero(),
-            bandwidth: DataSize::bytes(0),
-            storage: DataSize::bytes(0),
+            server_compute,
+            user_compute: user_compute_id + user_compute_verify,
+            bandwidth,
+            storage,
         }
     }
 
@@ -102,7 +132,7 @@ impl<A: Authenticator> Simulator<A> {
         }
     }
 
-    pub fn process(&self, action: &Action) -> ResourceUsage {
+    pub fn process(&mut self, action: &Action) -> ResourceUsage {
         match action {
             Action::Download { user, files } => self.process_download(*user, files),
             Action::RefreshMetadata { user } => self.process_refresh_metadata(*user),

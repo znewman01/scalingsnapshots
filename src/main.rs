@@ -7,6 +7,7 @@ use clap::{
 };
 use serde::Serialize;
 
+use sssim::authenticator::Snapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
 use sssim::{authenticator, Authenticator};
@@ -23,8 +24,12 @@ struct Event {
     result: ResourceUsage,
 }
 
-fn run<A: Authenticator>(authenticator: A) {
-    let simulator = Simulator::new(authenticator); // TODO: needs initial repo state
+fn run<S, A>(authenticator: A)
+where
+    S: Snapshot + Default,
+    A: Authenticator<S>,
+{
+    let mut simulator = Simulator::new(authenticator); // TODO: needs initial repo state
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));
