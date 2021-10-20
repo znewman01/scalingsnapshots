@@ -1,6 +1,6 @@
-pub trait Authenticator {}
-
-impl Authenticator for Box<dyn Authenticator> {}
+pub trait Authenticator {
+    type UserState;
+}
 
 mod insecure;
 pub use insecure::Authenticator as Insecure;

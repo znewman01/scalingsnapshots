@@ -43,7 +43,7 @@ pub struct ResourceUsage {
 /// TODO: user state?
 /// TODO: manage TUF repo?
 #[derive(Debug)]
-pub struct Simulator<A> {
+pub struct Simulator<A: Authenticator> {
     #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
 }

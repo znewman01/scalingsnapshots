@@ -23,12 +23,8 @@ struct Event {
     result: ResourceUsage,
 }
 
-fn main() {
-    let _args: Args = Args::parse();
-    // TODO: should be able to provide a configuration here
-
-    let authenticator: Box<dyn Authenticator> = Box::new(authenticator::Insecure::default());
-    let simulator: Simulator<Box<dyn Authenticator>> = Simulator::new(authenticator); // TODO: needs initial repo state
+fn run<A: Authenticator>(authenticator: A) {
+    let simulator = Simulator::new(authenticator); // TODO: needs initial repo state
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));
@@ -41,6 +37,16 @@ fn main() {
         let json = serde_json::to_string(&event).unwrap();
         println!("{}", json);
     }
+}
+
+fn main() {
+    let _args: Args = Args::parse();
+
+    // TODO: should be able to provide a configuration here
+    // let authenticator: authenticator::Insecure = Default::default();
+    let authenticator = authenticator::Insecure::default();
+
+    run(authenticator);
 }
 
 #[test]

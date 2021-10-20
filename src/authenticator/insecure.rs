@@ -6,4 +6,6 @@ use crate::authenticator;
 #[derive(Default)]
 pub struct Authenticator {}
 
-impl authenticator::Authenticator for Authenticator {}
+impl authenticator::Authenticator for Authenticator {
+    type UserState = ();
+}
