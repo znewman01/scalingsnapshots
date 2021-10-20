@@ -147,6 +147,10 @@ impl Entry {
     pub fn new(timestamp: DateTime<Utc>, action: Action) -> Self {
         Self { timestamp, action }
     }
+
+    pub fn action(&self) -> &Action {
+        &self.action
+    }
 }
 
 #[derive(Debug)]

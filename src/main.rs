@@ -33,7 +33,7 @@ fn main() {
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));
         let entry: Entry = result.expect("bad log entry");
-        let usage = simulator.process(&entry);
+        let usage = simulator.process(entry.action());
         let event = Event {
             entry,
             result: usage,
