@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
+use sssim::{authenticator, Authenticator};
 
 #[derive(Clap)]
 #[clap(name = crate_name!(), author=crate_authors!(", "), version=crate_version!())]
@@ -24,7 +25,10 @@ struct Event {
 
 fn main() {
     let _args: Args = Args::parse();
-    let simulator = Simulator::new(); // TODO: needs initial repo state
+    // TODO: should be able to provide a configuration here
+
+    let authenticator: Box<dyn Authenticator> = Box::new(authenticator::Insecure::default());
+    let simulator: Simulator<Box<dyn Authenticator>> = Simulator::new(authenticator); // TODO: needs initial repo state
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));

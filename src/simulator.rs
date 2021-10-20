@@ -1,4 +1,5 @@
 use crate::log::Entry;
+use crate::Authenticator;
 use chrono::Duration;
 use serde::{Serialize, Serializer};
 
@@ -28,12 +29,13 @@ pub struct ResourceUsage {
 ///
 /// TODO: should be just a function?
 #[derive(Debug)]
-pub struct Simulator {}
+pub struct Simulator<A> {
+    authenticator: A,
+}
 
-impl Simulator {
-    #[allow(clippy::new_without_default)] // TODO: will add args eventually
-    pub fn new() -> Self {
-        Self {}
+impl<A: Authenticator> Simulator<A> {
+    pub fn new(authenticator: A) -> Self {
+        Self { authenticator }
     }
 
     pub fn process(&self, _entry: &Entry) -> ResourceUsage {
