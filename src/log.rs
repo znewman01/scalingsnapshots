@@ -1,3 +1,4 @@
+#![allow(dead_code)] // TODO: fix once we're actually using this
 //! Concepts for log inputs.
 //!
 //! Most package repos have a model that involves the concepts:
@@ -115,8 +116,8 @@ impl From<Vec<FileRequest>> for FilesRequest {
 }
 
 impl FilesRequest {
-    /// Return a list of unique package IDs in this FilesRequest.
-    fn packages(&self) -> Vec<PackageId> {
+    /// Return a list of unique package IDs in this `FilesRequest`.
+    pub fn packages(&self) -> Vec<PackageId> {
         self.0.iter().map(|r| r.package.clone()).unique().collect()
     }
 }
@@ -137,22 +138,26 @@ pub enum Action {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct LogEntry {
+pub struct Entry {
     timestamp: DateTime<Utc>,
     action: Action,
 }
 
-impl LogEntry {
+impl Entry {
     pub fn new(timestamp: DateTime<Utc>, action: Action) -> Self {
         Self { timestamp, action }
+    }
+
+    pub fn action(&self) -> &Action {
+        &self.action
     }
 }
 
 #[derive(Debug)]
-pub struct Log(Vec<LogEntry>);
+pub struct Log(Vec<Entry>);
 
-impl From<Vec<LogEntry>> for Log {
-    fn from(entries: Vec<LogEntry>) -> Self {
+impl From<Vec<Entry>> for Log {
+    fn from(entries: Vec<Entry>) -> Self {
         // Log entries must be in sorted order by timestamp.
         let mut last: Option<DateTime<Utc>> = None;
         for entry in &entries {
@@ -169,8 +174,8 @@ impl From<Vec<LogEntry>> for Log {
 }
 
 impl IntoIterator for Log {
-    type Item = LogEntry;
-    type IntoIter = <Vec<LogEntry> as IntoIterator>::IntoIter;
+    type Item = Entry;
+    type IntoIter = <Vec<Entry> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
