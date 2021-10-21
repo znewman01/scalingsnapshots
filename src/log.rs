@@ -14,8 +14,12 @@ use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
 // Primitives
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct UserId(u64);
 
@@ -25,8 +29,15 @@ impl From<u64> for UserId {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PackageId(String);
+
+impl From<PackageId> for String {
+    fn from(id: PackageId) -> String {
+        id.0
+    }
+}
 
 impl From<String> for PackageId {
     fn from(id: String) -> Self {
@@ -34,12 +45,19 @@ impl From<String> for PackageId {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct FileName(String);
 
 impl From<String> for FileName {
     fn from(id: String) -> Self {
         FileName(id)
+    }
+}
+
+impl From<FileName> for String {
+    fn from(name: FileName) -> Self {
+        name.0
     }
 }
 
@@ -65,7 +83,8 @@ pub struct Package {
     releases: Vec<PackageRelease>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[cfg_attr(test, derive(Arbitrary))]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct File {
     name: FileName,
     length: u64,
@@ -75,9 +94,17 @@ impl File {
     pub fn new(name: FileName, length: u64) -> Self {
         Self { name, length }
     }
+
+    pub fn name(self) -> FileName {
+        self.name
+    }
+
+    pub fn length(&self) -> u64 {
+        self.length
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageRelease {
     version: PackageReleaseId,
     files: Vec<File>,
@@ -86,6 +113,10 @@ pub struct PackageRelease {
 impl PackageRelease {
     pub fn new(version: PackageReleaseId, files: Vec<File>) -> Self {
         Self { version, files }
+    }
+
+    pub fn files(self) -> Vec<File> {
+        self.files
     }
 }
 
@@ -106,7 +137,7 @@ impl FileRequest {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FilesRequest(Vec<FileRequest>);
 
 impl From<Vec<FileRequest>> for FilesRequest {
@@ -122,7 +153,7 @@ impl FilesRequest {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
     Download {
         user: UserId,
