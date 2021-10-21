@@ -1,6 +1,6 @@
 use crate::authenticator;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Snapshot {}
 
 impl authenticator::Snapshot for Snapshot {
@@ -21,7 +21,7 @@ impl authenticator::Snapshot for Snapshot {
 /// An insecure authenticator.
 ///
 /// Useful for testing.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Authenticator {}
 
 impl authenticator::Authenticator<Snapshot> for Authenticator {

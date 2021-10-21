@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::authenticator::Snapshot;
 use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
+use crate::tuf::{self, SnapshotMetadata};
 use crate::Authenticator;
 use chrono::Duration;
 use serde::{Serialize, Serializer};
@@ -61,6 +62,7 @@ pub struct Simulator<S: Snapshot, A: Authenticator<S>> {
     #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
     snapshots: HashMap<UserId, S>,
+    tuf: SnapshotMetadata,
 }
 
 #[allow(unused_variables)] // TODO: remove once this is actually implemented
@@ -68,10 +70,11 @@ impl<S: Snapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
 {
-    pub fn new(authenticator: A) -> Self {
+    pub fn new(authenticator: A, tuf: SnapshotMetadata) -> Self {
         Self {
             authenticator,
             snapshots: HashMap::default(),
+            tuf,
         }
     }
 
@@ -118,7 +121,9 @@ where
         }
     }
 
-    fn process_publish(&self, package: &PackageId, release: &PackageRelease) -> ResourceUsage {
+    fn process_publish(&mut self, package: PackageId, release: PackageRelease) -> ResourceUsage {
+        let files: Vec<tuf::File> = release.files().into_iter().map(tuf::File::from).collect();
+        self.tuf.upsert_target(package.into(), files);
         // 1. server updates
         //    - TODO: update all proofs? or lazily? or batch?
         //    - time this
@@ -132,10 +137,10 @@ where
         }
     }
 
-    pub fn process(&mut self, action: &Action) -> ResourceUsage {
+    pub fn process(&mut self, action: Action) -> ResourceUsage {
         match action {
-            Action::Download { user, files } => self.process_download(*user, files),
-            Action::RefreshMetadata { user } => self.process_refresh_metadata(*user),
+            Action::Download { user, files } => self.process_download(user, &files),
+            Action::RefreshMetadata { user } => self.process_refresh_metadata(user),
             Action::Publish { package, release } => self.process_publish(package, release),
         }
     }
