@@ -6,6 +6,7 @@ edition = "2021"
 repository = "https://github.com/znewman01/scalingsnapshots"
 license = "MIT"
 description = "Simulator for scaling snapshots."
+default-run = "sssim"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
