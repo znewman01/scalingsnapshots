@@ -8,7 +8,7 @@ use clap::{
 };
 use serde::Serialize;
 
-use sssim::authenticator::Snapshot;
+use sssim::authenticator::ClientSnapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
 use sssim::tuf::SnapshotMetadata;
@@ -28,7 +28,7 @@ struct Event {
 
 fn run<S, A>(authenticator: A)
 where
-    S: Snapshot + Default + Debug,
+    S: ClientSnapshot + Default + Debug,
     A: Authenticator<S> + Debug,
 {
     // TODO: actually initialize

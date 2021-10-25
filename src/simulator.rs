@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::authenticator::Snapshot;
+use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
 use crate::tuf::{self, SnapshotMetadata};
 use crate::Authenticator;
@@ -58,7 +58,7 @@ where
 /// TODO: user state?
 /// TODO: manage TUF repo?
 #[derive(Debug)]
-pub struct Simulator<S: Snapshot, A: Authenticator<S>> {
+pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
     #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
     snapshots: HashMap<UserId, S>,
@@ -66,7 +66,7 @@ pub struct Simulator<S: Snapshot, A: Authenticator<S>> {
 }
 
 #[allow(unused_variables)] // TODO: remove once this is actually implemented
-impl<S: Snapshot, A: Authenticator<S>> Simulator<S, A>
+impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
 {

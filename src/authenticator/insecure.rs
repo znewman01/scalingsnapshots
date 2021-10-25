@@ -1,9 +1,11 @@
+use authenticator::ClientSnapshot;
+
 use crate::authenticator;
 
 #[derive(Default, Debug)]
 pub struct Snapshot {}
 
-impl authenticator::Snapshot for Snapshot {
+impl ClientSnapshot for Snapshot {
     type Digest = ();
     type Id = ();
 
@@ -25,10 +27,7 @@ impl authenticator::Snapshot for Snapshot {
 pub struct Authenticator {}
 
 impl authenticator::Authenticator<Snapshot> for Authenticator {
-    fn refresh_metadata(
-        &self,
-        _snapshot_id: &<Snapshot as authenticator::Snapshot>::Id,
-    ) -> Snapshot {
+    fn refresh_metadata(&self, _snapshot_id: &<Snapshot as ClientSnapshot>::Id) -> Snapshot {
         Snapshot::default()
     }
 }

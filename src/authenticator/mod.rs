@@ -1,6 +1,10 @@
 // Client-side state
-pub trait Snapshot {
+pub trait ClientSnapshot {
+    /// Everything the client needs to verify proofs about metadata.
     type Digest;
+    /// Identifies what digest we have, so
+    ///   (1) the server can give us proofs against it
+    ///   (2) the server can update us appropriately
     type Id;
 
     fn id(&self) -> Self::Id;
@@ -13,7 +17,7 @@ pub trait Snapshot {
 }
 
 // Server-side state
-pub trait Authenticator<S: Snapshot> {
+pub trait Authenticator<S: ClientSnapshot> {
     fn refresh_metadata(&self, snapshot_id: &S::Id) -> S;
 }
 
