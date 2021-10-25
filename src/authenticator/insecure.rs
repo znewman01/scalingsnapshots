@@ -38,6 +38,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         _snapshot_id: &<Snapshot as ClientSnapshot>::Id,
     ) -> <Snapshot as ClientSnapshot>::Diff {
     }
+
+    // TODO: storage usage
+    // (when implementing for vanilla TUF, use spreadsheet to estimate this)
 }
 
 #[cfg(test)]
