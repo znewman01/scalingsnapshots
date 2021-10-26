@@ -145,11 +145,12 @@ in rec {
 
     name = "run-ssnap";
     installPhase = ''
-      PATH=${scalingsnapshots}/bin/:$PATH
+      PATH=${scalingsnapshots}/bin/:${pkgs.jq}/bin/:$PATH
       mkdir -p $out
 
-      # Check that our fakedata matches the schema.
-      diff ${data}/fakedata.json <(dummy_logs)
+      # Check that our fakedata matches the schema (for both Rust and Python).
+      diff <(jq --sort-keys < ${data}/fakedata.json) <(dummy_logs | jq --sort-keys)
+      diff <(jq --sort-keys < ${data}/fakedata.json) <(sslogs_test_format | jq --sort-keys)
 
       # Try running the entire pipeline
       cat ${data}/fakedata.json \
