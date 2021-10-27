@@ -1,5 +1,6 @@
 #![feature(stdin_forwarders)]
 #![cfg_attr(feature = "strict", deny(warnings))]
+use std::fmt::Debug;
 use std::io;
 
 use clap::{
@@ -7,9 +8,10 @@ use clap::{
 };
 use serde::Serialize;
 
-use sssim::authenticator::Snapshot;
+use sssim::authenticator::ClientSnapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
+use sssim::tuf::SnapshotMetadata;
 use sssim::{authenticator, Authenticator};
 
 #[derive(Clap)]
@@ -26,15 +28,17 @@ struct Event {
 
 fn run<S, A>(authenticator: A)
 where
-    S: Snapshot + Default,
-    A: Authenticator<S>,
+    S: ClientSnapshot + Default + Debug,
+    A: Authenticator<S> + Debug,
 {
-    let mut simulator = Simulator::new(authenticator); // TODO: needs initial repo state
+    // TODO: actually initialize
+    let initial_tuf_state = SnapshotMetadata::default();
+    let mut simulator = Simulator::new(authenticator, initial_tuf_state);
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));
         let entry: Entry = result.expect("bad log entry");
-        let usage = simulator.process(entry.action());
+        let usage = simulator.process(entry.action().clone());
         let event = Event {
             entry,
             result: usage,
@@ -48,7 +52,6 @@ fn main() {
     let _args: Args = Args::parse();
 
     // TODO: should be able to provide a configuration here
-    // let authenticator: authenticator::Insecure = Default::default();
     let authenticator = authenticator::Insecure::default();
 
     run(authenticator);

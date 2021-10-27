@@ -6,6 +6,7 @@ edition = "2021"
 repository = "https://github.com/znewman01/scalingsnapshots"
 license = "MIT"
 description = "Simulator for scaling snapshots."
+default-run = "sssim"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,3 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 itertools = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+proptest = "1.0.0"
+proptest-derive = "0.3.0"

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::authenticator::Snapshot;
+use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
+use crate::tuf::{self, SnapshotMetadata};
 use crate::Authenticator;
 use chrono::Duration;
 use serde::{Serialize, Serializer};
@@ -57,21 +58,23 @@ where
 /// TODO: user state?
 /// TODO: manage TUF repo?
 #[derive(Debug)]
-pub struct Simulator<S: Snapshot, A: Authenticator<S>> {
+pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
     #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
     snapshots: HashMap<UserId, S>,
+    tuf: SnapshotMetadata,
 }
 
 #[allow(unused_variables)] // TODO: remove once this is actually implemented
-impl<S: Snapshot, A: Authenticator<S>> Simulator<S, A>
+impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
 {
-    pub fn new(authenticator: A) -> Self {
+    pub fn new(authenticator: A, tuf: SnapshotMetadata) -> Self {
         Self {
             authenticator,
             snapshots: HashMap::default(),
+            tuf,
         }
     }
 
@@ -95,20 +98,20 @@ where
 
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
-        let old_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
-        let (old_snapshot_id, user_compute_id) = time(|| old_snapshot.id());
+        let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let (old_snapshot_id, user_compute_id) = time(|| snapshot.id());
 
         // Answer the update metadata server-side.
-        let (new_snapshot, server_compute) =
+        let (snapshot_diff, server_compute) =
             time(|| self.authenticator.refresh_metadata(&old_snapshot_id));
         let bandwidth = DataSize::bytes(0); // TODO: implement on new_snapshot
         let storage = DataSize::bytes(0); // TODO: implement on Authenticator
 
         // Check the new snapshot for rollbacks and store it.
         let user_compute_verify = Duration::span(|| {
-            assert!(old_snapshot.check_no_rollback(&new_snapshot));
+            assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
-        self.snapshots.insert(user, new_snapshot);
+        snapshot.update(snapshot_diff);
 
         ResourceUsage {
             server_compute,
@@ -118,7 +121,9 @@ where
         }
     }
 
-    fn process_publish(&self, package: &PackageId, release: &PackageRelease) -> ResourceUsage {
+    fn process_publish(&mut self, package: PackageId, release: PackageRelease) -> ResourceUsage {
+        let files: Vec<tuf::File> = release.files().into_iter().map(tuf::File::from).collect();
+        self.tuf.upsert_target(package.into(), files);
         // 1. server updates
         //    - TODO: update all proofs? or lazily? or batch?
         //    - time this
@@ -132,10 +137,10 @@ where
         }
     }
 
-    pub fn process(&mut self, action: &Action) -> ResourceUsage {
+    pub fn process(&mut self, action: Action) -> ResourceUsage {
         match action {
-            Action::Download { user, files } => self.process_download(*user, files),
-            Action::RefreshMetadata { user } => self.process_refresh_metadata(*user),
+            Action::Download { user, files } => self.process_download(user, &files),
+            Action::RefreshMetadata { user } => self.process_refresh_metadata(user),
             Action::Publish { package, release } => self.process_publish(package, release),
         }
     }
