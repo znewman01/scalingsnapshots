@@ -15,6 +15,9 @@ default-run = "sssim"
 strict = []
 
 [dependencies]
+sha3 = "0.9.1"
+digest = "0.9.0"
+rug = "1.13.0"
 clap = "=3.0.0-beta.4"
 clap_derive = "=3.0.0-beta.4"
 serde = { version = "1.0", features = ["derive"] }
