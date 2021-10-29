@@ -4,14 +4,19 @@ use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
 use crate::tuf::{self, SnapshotMetadata};
 use crate::Authenticator;
-use chrono::Duration;
 use serde::{Serialize, Serializer};
+use time::Duration;
 
 fn serialize_ns<S>(duration: &Duration, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    s.serialize_i64(duration.num_nanoseconds().expect("too many nanos"))
+    s.serialize_i64(
+        duration
+            .whole_nanoseconds()
+            .try_into()
+            .expect("too many nanos"),
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -37,17 +42,6 @@ pub struct ResourceUsage {
     bandwidth: DataSize,
     #[serde(flatten)]
     storage: DataSize,
-}
-
-fn time<F, V>(f: F) -> (V, Duration)
-where
-    F: FnOnce() -> V,
-{
-    let mut value = None;
-    let duration = Duration::span(|| {
-        value.replace(f());
-    });
-    (value.expect("definitely populated"), duration)
 }
 
 /// A simulator for a secure software repository.
@@ -89,8 +83,8 @@ where
         //    - TODO: think about how to account for TUF base
         // TODO: manage user metadata here? (configurable?)
         ResourceUsage {
-            server_compute: Duration::zero(),
-            user_compute: Duration::zero(),
+            server_compute: Duration::ZERO,
+            user_compute: Duration::ZERO,
             bandwidth: DataSize::bytes(0),
             storage: DataSize::bytes(0),
         }
@@ -99,16 +93,16 @@ where
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
         let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
-        let (old_snapshot_id, user_compute_id) = time(|| snapshot.id());
+        let (user_compute_id, old_snapshot_id) = Duration::time_fn(|| snapshot.id());
 
         // Answer the update metadata server-side.
-        let (snapshot_diff, server_compute) =
-            time(|| self.authenticator.refresh_metadata(&old_snapshot_id));
+        let (server_compute, snapshot_diff) =
+            Duration::time_fn(|| self.authenticator.refresh_metadata(&old_snapshot_id));
         let bandwidth = DataSize::bytes(0); // TODO: implement on new_snapshot
         let storage = DataSize::bytes(0); // TODO: implement on Authenticator
 
         // Check the new snapshot for rollbacks and store it.
-        let user_compute_verify = Duration::span(|| {
+        let (user_compute_verify, _) = Duration::time_fn(|| {
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
         snapshot.update(snapshot_diff);
@@ -130,8 +124,8 @@ where
         // 2. measure storage size
         // no user time, bandwidth
         ResourceUsage {
-            server_compute: Duration::zero(),
-            user_compute: Duration::zero(),
+            server_compute: Duration::ZERO,
+            user_compute: Duration::ZERO,
             bandwidth: DataSize::bytes(0),
             storage: DataSize::bytes(0),
         }

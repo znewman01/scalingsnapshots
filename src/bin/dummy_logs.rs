@@ -1,13 +1,13 @@
 use std::io::{self, Write};
 
-use chrono::prelude::*;
+use time::macros::datetime;
 
 use sssim::log::{Action, Entry, File, FileRequest, FilesRequest, Log, PackageRelease, UserId};
 
 fn main() {
     let log = Log::from(vec![
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
+            datetime!(1970-01-01 00:00:00).assume_utc(),
             Action::Download {
                 user: UserId::from(1),
                 files: FilesRequest::from(vec![
@@ -25,13 +25,13 @@ fn main() {
             },
         ),
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 1),
+            datetime!(1970-01-01 00:00:01).assume_utc(),
             Action::RefreshMetadata {
                 user: UserId::from(2),
             },
         ),
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 2),
+            datetime!(1970-01-01 00:00:02).assume_utc(),
             Action::Publish {
                 package: "openssl".to_string().into(),
                 release: PackageRelease::new(

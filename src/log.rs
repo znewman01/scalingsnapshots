@@ -9,10 +9,10 @@
 //!
 //! The TUF concepts are a little different. It's up to the Repository
 //! Simulator to translate between them.
-use chrono::prelude::*;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
+use time::OffsetDateTime;
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -170,12 +170,12 @@ pub enum Action {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
-    timestamp: DateTime<Utc>,
+    timestamp: OffsetDateTime,
     action: Action,
 }
 
 impl Entry {
-    pub fn new(timestamp: DateTime<Utc>, action: Action) -> Self {
+    pub fn new(timestamp: OffsetDateTime, action: Action) -> Self {
         Self { timestamp, action }
     }
 
@@ -190,7 +190,7 @@ pub struct Log(Vec<Entry>);
 impl From<Vec<Entry>> for Log {
     fn from(entries: Vec<Entry>) -> Self {
         // Log entries must be in sorted order by timestamp.
-        let mut last: Option<DateTime<Utc>> = None;
+        let mut last: Option<OffsetDateTime> = None;
         for entry in &entries {
             if let Some(last) = last {
                 if entry.timestamp < last {

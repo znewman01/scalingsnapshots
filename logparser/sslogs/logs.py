@@ -53,7 +53,7 @@ class LogEntry:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "action": {type(self.action).__name__: dataclasses.asdict(self.action)},
-            "timestamp": self.timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": self.timestamp.strftime("%Y-%m-%dT%H:%M:%S %z"),
         }
 
 
