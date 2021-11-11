@@ -92,8 +92,10 @@ where
 
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
-        let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
-        let (user_compute_id, old_snapshot_id) = Duration::time_fn(|| snapshot.id());
+        let (old_snapshot_id, user_compute_id_time) = {
+            let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+            time(|| snapshot.id())
+        };
 
         // Answer the update metadata server-side.
         let (server_compute, snapshot_diff) =
@@ -102,14 +104,15 @@ where
         let storage = DataSize::bytes(0); // TODO: implement on Authenticator
 
         // Check the new snapshot for rollbacks and store it.
-        let (user_compute_verify, _) = Duration::time_fn(|| {
+        let snapshot = self.snapshots.get_mut(&user).expect("Snapshot was populated, but was then empty.");
+        let user_compute_verify = Duration::span(|| {
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
         snapshot.update(snapshot_diff);
 
         ResourceUsage {
             server_compute,
-            user_compute: user_compute_id + user_compute_verify,
+            user_compute: user_compute_id_time + user_compute_verify,
             bandwidth,
             storage,
         }
