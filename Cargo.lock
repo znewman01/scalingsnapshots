@@ -540,6 +540,7 @@ dependencies = [
  "clap",
  "digest",
  "itertools",
+ "lazy_static",
  "proptest",
  "proptest-derive",
  "rug",
