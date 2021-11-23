@@ -1,44 +1,52 @@
 use std::io::{self, Write};
 
-use chrono::prelude::*;
+use time::macros::datetime;
 
-use sssim::log::{Action, Entry, File, FileRequest, FilesRequest, Log, PackageRelease, UserId};
+use sssim::log::{
+    Action, Entry, File, FileRequest, Log, PackageRelease, QualifiedFile, QualifiedFiles, UserId,
+};
 
 fn main() {
     let log = Log::from(vec![
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
+            datetime!(1970-01-01 00:00:00).assume_utc(),
             Action::Download {
                 user: UserId::from(1),
-                files: FilesRequest::from(vec![
-                    FileRequest::new(
-                        "libc".to_string().into(),
-                        "0.5".to_string().into(),
-                        "libc-0.5.tar.gz".to_string().into(),
+                files: QualifiedFiles::from(vec![
+                    QualifiedFile::new(
+                        FileRequest::new(
+                            "libc".to_string().into(),
+                            "0.5".to_string().into(),
+                            "libc-0.5.tar.gz".to_string().into(),
+                        ),
+                        Some(1000),
                     ),
-                    FileRequest::new(
-                        "libc".to_string().into(),
-                        "0.5".to_string().into(),
-                        "libc-0.5-docs.tar.gz".to_string().into(),
+                    QualifiedFile::new(
+                        FileRequest::new(
+                            "libc".to_string().into(),
+                            "0.5".to_string().into(),
+                            "libc-0.5-docs.tar.gz".to_string().into(),
+                        ),
+                        None,
                     ),
                 ]),
             },
         ),
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 1),
+            datetime!(1970-01-01 00:00:01).assume_utc(),
             Action::RefreshMetadata {
                 user: UserId::from(2),
             },
         ),
         Entry::new(
-            Utc.ymd(1970, 1, 1).and_hms(0, 0, 2),
+            datetime!(1970-01-01 00:00:02).assume_utc(),
             Action::Publish {
                 package: "openssl".to_string().into(),
                 release: PackageRelease::new(
                     "1.0.0".to_string().into(),
                     vec![
-                        File::new("openssl-1.0.0-sparc.tar.gz".to_string().into(), 1000),
-                        File::new("openssl-1.0.0-amd64.tar.gz".to_string().into(), 2000),
+                        File::new("openssl-1.0.0-sparc.tar.gz".to_string().into(), Some(1000)),
+                        File::new("openssl-1.0.0-amd64.tar.gz".to_string().into(), None),
                     ],
                 ),
             },

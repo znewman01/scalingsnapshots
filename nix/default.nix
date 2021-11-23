@@ -63,10 +63,13 @@ in rec {
           enable = true;
           entry = ''
             bash -c ' \
-               cp -r ${builtins.head sssim.builtDependencies}/.cargo/ .cargo
-               CARGO_HOME=.cargo \
+               export CARGO_HOME="$(mktemp -d)/cargo"
+               cp --no-preserve=mode -r ${
+                 builtins.head sssim.builtDependencies
+               }/.cargo/ "''${CARGO_HOME}"
                PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
-               cargo clippy --release --features strict --offline -- --no-deps
+                 cargo clippy --release --features strict --offline -- --no-deps
+               rm -rf "''${CARGO_HOME}"
             '
           '';
           pass_filenames = false;

@@ -9,13 +9,20 @@
 //!
 //! The TUF concepts are a little different. It's up to the Repository
 //! Simulator to translate between them.
-use chrono::prelude::*;
 use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
+use time::macros::declare_format_string;
+use time::OffsetDateTime;
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
+
+declare_format_string!(
+    simple_dt_8601,
+    OffsetDateTime,
+    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour sign:mandatory][offset_minute]"
+);
 
 // Primitives
 
@@ -87,11 +94,11 @@ pub struct Package {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct File {
     name: FileName,
-    length: u64,
+    length: Option<u64>,
 }
 
 impl File {
-    pub fn new(name: FileName, length: u64) -> Self {
+    pub fn new(name: FileName, length: Option<u64>) -> Self {
         Self { name, length }
     }
 
@@ -99,7 +106,7 @@ impl File {
         self.name
     }
 
-    pub fn length(&self) -> u64 {
+    pub fn length(&self) -> Option<u64> {
         self.length
     }
 }
@@ -138,18 +145,34 @@ impl FileRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FilesRequest(Vec<FileRequest>);
+pub struct QualifiedFile {
+    path: FileRequest,
+    length: Option<u64>,
+}
 
-impl From<Vec<FileRequest>> for FilesRequest {
-    fn from(requests: Vec<FileRequest>) -> Self {
+impl QualifiedFile {
+    pub fn new(path: FileRequest, length: Option<u64>) -> Self {
+        Self { path, length }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QualifiedFiles(Vec<QualifiedFile>);
+
+impl From<Vec<QualifiedFile>> for QualifiedFiles {
+    fn from(requests: Vec<QualifiedFile>) -> Self {
         Self(requests)
     }
 }
 
-impl FilesRequest {
-    /// Return a list of unique package IDs in this `FilesRequest`.
+impl QualifiedFiles {
+    /// Return a list of unique package IDs in this `QualifiedFiles`.
     pub fn packages(&self) -> Vec<PackageId> {
-        self.0.iter().map(|r| r.package.clone()).unique().collect()
+        self.0
+            .iter()
+            .map(|r| r.path.package.clone())
+            .unique()
+            .collect()
     }
 }
 
@@ -157,7 +180,7 @@ impl FilesRequest {
 pub enum Action {
     Download {
         user: UserId,
-        files: FilesRequest,
+        files: QualifiedFiles,
     },
     RefreshMetadata {
         user: UserId,
@@ -170,12 +193,13 @@ pub enum Action {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
-    timestamp: DateTime<Utc>,
+    #[serde(with = "simple_dt_8601")]
+    timestamp: OffsetDateTime,
     action: Action,
 }
 
 impl Entry {
-    pub fn new(timestamp: DateTime<Utc>, action: Action) -> Self {
+    pub fn new(timestamp: OffsetDateTime, action: Action) -> Self {
         Self { timestamp, action }
     }
 
@@ -190,7 +214,7 @@ pub struct Log(Vec<Entry>);
 impl From<Vec<Entry>> for Log {
     fn from(entries: Vec<Entry>) -> Self {
         // Log entries must be in sorted order by timestamp.
-        let mut last: Option<DateTime<Utc>> = None;
+        let mut last: Option<OffsetDateTime> = None;
         for entry in &entries {
             if let Some(last) = last {
                 if entry.timestamp < last {

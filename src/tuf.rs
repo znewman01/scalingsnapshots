@@ -97,11 +97,11 @@ impl From<FileName> for String {
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub struct File {
     name: FileName,
-    length: u64,
+    length: Option<u64>,
 }
 
 impl File {
-    pub fn new(name: FileName, length: u64) -> Self {
+    pub fn new(name: FileName, length: Option<u64>) -> Self {
         Self { name, length }
     }
 
@@ -109,7 +109,7 @@ impl File {
         self.name
     }
 
-    pub fn length(&self) -> u64 {
+    pub fn length(&self) -> Option<u64> {
         self.length
     }
 }
