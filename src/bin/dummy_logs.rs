@@ -2,7 +2,9 @@ use std::io::{self, Write};
 
 use time::macros::datetime;
 
-use sssim::log::{Action, Entry, File, FileRequest, FilesRequest, Log, PackageRelease, UserId};
+use sssim::log::{
+    Action, Entry, File, FileRequest, Log, PackageRelease, QualifiedFile, QualifiedFiles, UserId,
+};
 
 fn main() {
     let log = Log::from(vec![
@@ -10,16 +12,22 @@ fn main() {
             datetime!(1970-01-01 00:00:00).assume_utc(),
             Action::Download {
                 user: UserId::from(1),
-                files: FilesRequest::from(vec![
-                    FileRequest::new(
-                        "libc".to_string().into(),
-                        "0.5".to_string().into(),
-                        "libc-0.5.tar.gz".to_string().into(),
+                files: QualifiedFiles::from(vec![
+                    QualifiedFile::new(
+                        FileRequest::new(
+                            "libc".to_string().into(),
+                            "0.5".to_string().into(),
+                            "libc-0.5.tar.gz".to_string().into(),
+                        ),
+                        Some(1000),
                     ),
-                    FileRequest::new(
-                        "libc".to_string().into(),
-                        "0.5".to_string().into(),
-                        "libc-0.5-docs.tar.gz".to_string().into(),
+                    QualifiedFile::new(
+                        FileRequest::new(
+                            "libc".to_string().into(),
+                            "0.5".to_string().into(),
+                            "libc-0.5-docs.tar.gz".to_string().into(),
+                        ),
+                        None,
                     ),
                 ]),
             },
@@ -37,8 +45,8 @@ fn main() {
                 release: PackageRelease::new(
                     "1.0.0".to_string().into(),
                     vec![
-                        File::new("openssl-1.0.0-sparc.tar.gz".to_string().into(), 1000),
-                        File::new("openssl-1.0.0-amd64.tar.gz".to_string().into(), 2000),
+                        File::new("openssl-1.0.0-sparc.tar.gz".to_string().into(), Some(1000)),
+                        File::new("openssl-1.0.0-amd64.tar.gz".to_string().into(), None),
                     ],
                 ),
             },

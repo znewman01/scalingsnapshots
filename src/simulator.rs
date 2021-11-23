@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::authenticator::ClientSnapshot;
-use crate::log::{Action, FilesRequest, PackageId, PackageRelease, UserId};
+use crate::log::{Action, PackageId, PackageRelease, QualifiedFiles, UserId};
 use crate::tuf::{self, SnapshotMetadata};
 use crate::Authenticator;
 use serde::{Serialize, Serializer};
@@ -73,7 +73,7 @@ where
     }
 
     #[allow(dead_code)] // TODO
-    fn process_download(&self, user: UserId, files: &FilesRequest) -> ResourceUsage {
+    fn process_download(&self, user: UserId, files: &QualifiedFiles) -> ResourceUsage {
         // 1. server processes files request (may need data on what user has) -> proof
         //    - time this
         //    - measure proof bandwidth

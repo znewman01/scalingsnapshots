@@ -6,13 +6,13 @@ import dataclasses
 import datetime
 
 from dataclasses import dataclass
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict, Any, Optional
 
 
 @dataclass
 class File:
     name: str
-    length: int
+    length: Optional[int] = None
 
 
 @dataclass
@@ -20,6 +20,12 @@ class FilePath:
     package: str
     release: str
     file: str
+
+
+@dataclass
+class QualifiedFile:
+    path: FilePath
+    length: Optional[int] = None
 
 
 @dataclass
@@ -31,7 +37,7 @@ class PackageRelease:
 @dataclass
 class Download:
     user: int
-    files: List[FilePath]
+    files: List[QualifiedFile]
 
 
 @dataclass
@@ -66,9 +72,16 @@ def main():
             action=Download(
                 user=1,
                 files=[
-                    FilePath(package="libc", release="0.5", file="libc-0.5.tar.gz"),
-                    FilePath(
-                        package="libc", release="0.5", file="libc-0.5-docs.tar.gz"
+                    QualifiedFile(
+                        path=FilePath(
+                            package="libc", release="0.5", file="libc-0.5.tar.gz"
+                        ),
+                        length=1000,
+                    ),
+                    QualifiedFile(
+                        FilePath(
+                            package="libc", release="0.5", file="libc-0.5-docs.tar.gz"
+                        ),
                     ),
                 ],
             ),
@@ -89,7 +102,7 @@ def main():
                     version="1.0.0",
                     files=[
                         File(name="openssl-1.0.0-sparc.tar.gz", length=1000),
-                        File(name="openssl-1.0.0-amd64.tar.gz", length=2000),
+                        File(name="openssl-1.0.0-amd64.tar.gz"),
                     ],
                 ),
             ),
