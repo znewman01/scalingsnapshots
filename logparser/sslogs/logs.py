@@ -60,7 +60,9 @@ class LogEntry:
 def main():
     log = [
         LogEntry(
-            timestamp=datetime.datetime(1970, 1, 1, 0, 0, 0),
+            timestamp=datetime.datetime(
+                1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
+            ),
             action=Download(
                 user=1,
                 files=[
@@ -72,11 +74,15 @@ def main():
             ),
         ),
         LogEntry(
-            timestamp=datetime.datetime(1970, 1, 1, 0, 0, 1),
+            timestamp=datetime.datetime(
+                1970, 1, 1, 0, 0, 1, tzinfo=datetime.timezone.utc
+            ),
             action=RefreshMetadata(user=2),
         ),
         LogEntry(
-            timestamp=datetime.datetime(1970, 1, 1, 0, 0, 2),
+            timestamp=datetime.datetime(
+                1970, 1, 1, 0, 0, 2, tzinfo=datetime.timezone.utc
+            ),
             action=Publish(
                 package="openssl",
                 release=PackageRelease(
