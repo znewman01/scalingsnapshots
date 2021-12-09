@@ -5,7 +5,7 @@ use std::collections::HashSet;
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
 lazy_static! {
-    static ref MODULUS: Integer = Integer::parse(
+    pub static ref MODULUS: Integer = Integer::parse(
         "2519590847565789349402718324004839857142928212620403202777713783604366202070\
            7595556264018525880784406918290641249515082189298559149176184502808489120072\
            8449926873928072877767359714183472702618963750149718246911650776133798590957\
@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 #[derive(Clone, Debug)]
-struct RsaAccumulatorDigest {
+pub struct RsaAccumulatorDigest {
     value: Integer,
 }
 impl Default for RsaAccumulatorDigest {
@@ -38,14 +38,14 @@ impl From<Integer> for RsaAccumulatorDigest {
     }
 }
 impl RsaAccumulatorDigest {
-    fn verify(&self, member: &Integer, witness: Integer) -> bool {
+    pub fn verify(&self, member: &Integer, witness: Integer) -> bool {
         witness
             .pow_mod(member, &MODULUS)
             .expect("Non negative member")
             == self.value
     }
 
-    fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
+    pub fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
         //TODO clean up variable names and clones
         let (a, B) = witness;
         let temp1 = self
@@ -59,16 +59,16 @@ impl RsaAccumulatorDigest {
 }
 
 #[derive(Default, Debug, Clone)]
-struct RsaAccumulator {
+pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     set: HashSet<Integer>,
 }
 impl RsaAccumulator {
-    fn digest(&self) -> &RsaAccumulatorDigest {
+    pub fn digest(&self) -> &RsaAccumulatorDigest {
         &self.digest
     }
 
-    fn add(&mut self, member: Integer) {
+    pub fn add(&mut self, member: Integer) {
         let is_prime = member.is_probably_prime(30);
         if is_prime == IsPrime::No {
             panic!("member must be prime");
@@ -78,7 +78,7 @@ impl RsaAccumulator {
     }
 
     //TODO compute all proofs?
-    fn prove(&self, member: &Integer) -> Option<Integer> {
+    pub fn prove(&self, member: &Integer) -> Option<Integer> {
         if !self.set.contains(member) {
             return None;
         }
@@ -91,7 +91,7 @@ impl RsaAccumulator {
         Some(current)
     }
 
-    fn prove_nonmember(&self, value: Integer) -> Option<(Integer, Integer)> {
+    pub fn prove_nonmember(&self, value: Integer) -> Option<(Integer, Integer)> {
         if self.set.contains(&value) {
             return None;
         }
