@@ -3,9 +3,7 @@
 use std::fmt::Debug;
 use std::io;
 
-use clap::{
-    crate_authors, crate_description, crate_license, crate_name, crate_version, Parser,
-};
+use clap::{crate_authors, crate_description, crate_license, crate_name, crate_version, Parser};
 use serde::Serialize;
 
 use sssim::authenticator::ClientSnapshot;

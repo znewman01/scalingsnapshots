@@ -104,7 +104,10 @@ where
         let storage = DataSize::bytes(0); // TODO: implement on Authenticator
 
         // Check the new snapshot for rollbacks and store it.
-        let snapshot = self.snapshots.get_mut(&user).expect("Snapshot was populated, but was then empty.");
+        let snapshot = self
+            .snapshots
+            .get_mut(&user)
+            .expect("Snapshot was populated, but was then empty.");
         let user_compute_verify = Duration::span(|| {
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });

@@ -1,11 +1,12 @@
 use lazy_static::lazy_static;
-use rug::Integer;
 use rug::integer::IsPrime;
+use rug::Integer;
 use std::collections::HashSet;
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
 lazy_static! {
-    static ref MODULUS: Integer = Integer::parse("2519590847565789349402718324004839857142928212620403202777713783604366202070\
+    static ref MODULUS: Integer = Integer::parse(
+        "2519590847565789349402718324004839857142928212620403202777713783604366202070\
            7595556264018525880784406918290641249515082189298559149176184502808489120072\
            8449926873928072877767359714183472702618963750149718246911650776133798590957\
            0009733045974880842840179742910064245869181719511874612151517265463228221686\
@@ -13,17 +14,22 @@ lazy_static! {
            8242811981638150106748104516603773060562016196762561338441436038339044149526\
            3443219011465754445417842402092461651572335077870774981712577246796292638635\
            6373289912154831438167899885040445364023527381951378636564391212010397122822\
-           120720357").unwrap().into();
+           120720357"
+    )
+    .unwrap()
+    .into();
     static ref GENERATOR: Integer = Integer::from(65537);
 }
 
 #[derive(Clone, Debug)]
 struct RsaAccumulatorDigest {
-    value: Integer
+    value: Integer,
 }
 impl Default for RsaAccumulatorDigest {
     fn default() -> Self {
-        RsaAccumulatorDigest { value: GENERATOR.clone() }
+        RsaAccumulatorDigest {
+            value: GENERATOR.clone(),
+        }
     }
 }
 impl From<Integer> for RsaAccumulatorDigest {
@@ -33,13 +39,20 @@ impl From<Integer> for RsaAccumulatorDigest {
 }
 impl RsaAccumulatorDigest {
     fn verify(&self, member: &Integer, witness: Integer) -> bool {
-        witness.pow_mod(member, &MODULUS).expect("Non negative member") == self.value
+        witness
+            .pow_mod(member, &MODULUS)
+            .expect("Non negative member")
+            == self.value
     }
 
-    fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) ->bool {
+    fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
         //TODO clean up variable names and clones
         let (a, B) = witness;
-        let temp1 = self.value.clone().pow_mod(&a, &MODULUS).expect("Non negative witness");
+        let temp1 = self
+            .value
+            .clone()
+            .pow_mod(&a, &MODULUS)
+            .expect("Non negative witness");
         let temp2 = B.pow_mod(value, &MODULUS).expect("Non negative value");
         return (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone();
     }
@@ -48,7 +61,7 @@ impl RsaAccumulatorDigest {
 #[derive(Default, Debug, Clone)]
 struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
-    set: HashSet<Integer>
+    set: HashSet<Integer>,
 }
 impl RsaAccumulator {
     fn digest(&self) -> &RsaAccumulatorDigest {
@@ -115,14 +128,14 @@ impl Arbitrary for RsaAccumulator {
 
 #[cfg(test)]
 mod test {
-    use proptest::prelude::*;
     use super::*;
+    use proptest::prelude::*;
 
-    fn primes() -> impl Strategy<Value=Integer> {
+    fn primes() -> impl Strategy<Value = Integer> {
         return Just(5.into());
     }
 
-    proptest!{
+    proptest! {
         #[test]
         fn test_rsa_accumulator_inner(mut acc: RsaAccumulator, value in primes()) {
             assert_eq!(acc.prove(&value), None);
@@ -156,5 +169,5 @@ mod test {
 
         acc.add(5.into());
         assert_eq!(acc.prove_nonmember(5.into()), None);
-}
+    }
 }
