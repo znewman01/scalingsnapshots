@@ -43,7 +43,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     //fix with https://arxiv.org/pdf/1805.10941.pdf
     c.bench_function("hash_to_prime 1", |b| {
-        b.iter(||hash_to_prime(black_box(&[]), &MODULUS))
+        b.iter(||hash_to_prime(black_box(&[8u8]), &MODULUS))
     });
 }
 
