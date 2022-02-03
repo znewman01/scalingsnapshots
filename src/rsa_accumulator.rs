@@ -77,6 +77,14 @@ impl RsaAccumulator {
         self.set.insert(member);
     }
 
+    pub fn new(members: Vec<Integer>) -> Self {
+        let mut acc = Self::default();
+        for m in members.into_iter() {
+            acc.add(m);
+        }
+        return acc;
+    }
+
     //TODO compute all proofs?
     pub fn prove(&self, member: &Integer) -> Option<Integer> {
         if !self.set.contains(member) {
