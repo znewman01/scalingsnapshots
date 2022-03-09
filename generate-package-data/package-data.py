@@ -1,24 +1,47 @@
 import datetime
+from dataclasses import dataclass
+from collections import Counter
+from typing import Dict, Set
 
 INPUT_FILENAME = "testdata"
+SESSION_DURATION = datetime.timedelta(minutes=1)
 
-class Package_data:
-    start_time = None
-    end_time = None
+@dataclass
+class PackageData:
+    start_time: datetime.datetime
+    end_time: datetime.datetime
 
-    dls_by_package = {}
-    dls_by_user = {}
-    dls_by_hour = {}
-    dls_count = 0
+    dls_by_package: Counter[str, int]
+    dls_by_user: Counter[str, int]
+    dls_by_hour: Counter[tuple[int, int], int]
+    dls_count: int
 
-    sessions_by_user = {}
-    sessions_by_hour = {}
-    sessions_by_count = {}
-    sessions_count = 0
+    sessions_by_user: Counter[str, int]
+    sessions_by_hour: Counter[tuple[int, int], int]
+    sessions_by_count: Counter[int, int]
+    sessions_count: int
 
-    cur_session_start = None
-    users_in_cur_session = []
-    downloads_in_cur_session = 0
+    cur_session_start: datetime.datetime
+    users_in_cur_session: Set[str]
+    downloads_in_cur_session : int
+
+    def __init__(self):
+        self.start_time = None
+        self.end_time = None
+
+        self.dls_by_package = Counter()
+        self.dls_by_user = Counter()
+        self.dls_by_hour = Counter()
+        self.dls_count = 0
+
+        self.sessions_by_user = Counter()
+        self.sessions_by_hour = Counter()
+        self.sessions_by_count = Counter()
+        self.sessions_count = 0
+
+        self.cur_session_start = None
+        self.users_in_cur_session = set()
+        self.downloads_in_cur_session = 0
 
     def parse_line(self, userid, packageid, timestamp):
         if not self.start_time:
@@ -26,41 +49,39 @@ class Package_data:
         # can do this more efficiently by setting it once at the end
         self.end_time = timestamp
 
-        self.dls_by_package[packageid] = self.dls_by_package.get(packageid, 0) + 1
-        self.dls_by_user[userid] = self.dls_by_user.get(userid, 0) + 1
+        self.dls_by_package[packageid] += 1
+        self.dls_by_user[userid] += 1
         hour = (timestamp.isoweekday(), timestamp.hour)
-        self.dls_by_hour[hour] = self.dls_by_hour.get(hour, 0) + 1
-        self.dls_count = self.dls_count + 1
+        self.dls_by_hour[hour] += 1
+        self.dls_count += 1
 
-        if self.cur_session_start is None or self.cur_session_start + datetime.timedelta(minutes=1) < timestamp:
+        if self.cur_session_start is None or self.cur_session_start + SESSION_DURATION < timestamp:
             # if there was a previous session, add to sessions_by_count
             if self.cur_session_start is not None:
-                self.sessions_by_count[self.downloads_in_cur_session] = self.sessions_by_count.get(self.downloads_in_cur_session, 0) + 1
+                self.sessions_by_count[self.downloads_in_cur_session] += 1
             self.cur_session_start = timestamp
-            self.sessions_count = self.sessions_count + 1
-            self.sessions_by_hour[hour] = self.sessions_by_hour.get(hour, 0) + 1
+            self.sessions_count += 1
+            self.sessions_by_hour[hour] += 1
             self.users_in_cur_session = []
             self.downloads_in_cur_session = 0
 
-        self.downloads_in_cur_session = self.downloads_in_cur_session + 1
+        self.downloads_in_cur_session += 1
 
         if userid not in self.users_in_cur_session:
             self.users_in_cur_session.append(userid)
-            self.sessions_by_user[userid] = self.sessions_by_user.get(userid, 0) + 1
+            self.sessions_by_user[userid] += 1
 
 
     def finish_parsing(self):
         # add the last session count
-        self.sessions_by_count[self.downloads_in_cur_session] = self.sessions_by_count.get(self.downloads_in_cur_session, 0) + 1
+        self.sessions_by_count[self.downloads_in_cur_session] += 1
 
 
 
 if __name__ == '__main__':
-    data = Package_data()
+    data = PackageData()
     f = open(INPUT_FILENAME, 'r')
-    # TODO: read a stream
-    lines = f.readlines()
-    for l in lines:
+    for l in f:
         words = l.split(',')
         data.parse_line(words[0], words[1], datetime.datetime.strptime(words[2].strip(), "%Y-%m-%dT%H:%M:%S.%f"))
     data.finish_parsing()
