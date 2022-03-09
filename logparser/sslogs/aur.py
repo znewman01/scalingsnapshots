@@ -13,11 +13,12 @@ from __future__ import annotations
 import gzip
 import datetime
 import itertools
+import json
 
 from operator import attrgetter
 from typing import Iterable
 
-from sslogs.logs import FilePath, LogEntry, Publish, File
+from sslogs.logs import FilePath, LogEntry, Publish, File, PackageRelease
 
 
 def json_to_log_entry(entry) -> LogEntry:
@@ -37,8 +38,11 @@ def json_to_log_entry(entry) -> LogEntry:
 
 # def _tar_info_to_triplet(info: tarfile.TarInfo) -> Tuple[Tuple[package,]
 def process(archive: Iterable[file], curtime: int):
+    # only consider files added since the file was updated
+    # curtime is the beginning of the current range
+    # archive_filtered = [f for f in map(json.load, archive) if f["LastModified"] > curtime]
     archive_filtered = (
-        json.load(f) for f in archive if json.load(f)["LastModified"] > curtime
+        l for l in archive if l["LastModified"] > curtime
     )
     return [
         json_to_log_entry(j)
@@ -47,12 +51,10 @@ def process(archive: Iterable[file], curtime: int):
 
 
 def main():
-    archive = gzip.open("/tmp/packages-meta-v1.json", "r:")
-    log = process(archive, 1436303556)
+    archive = open("testdata.json", "r")
+    contents = json.load(archive)
+    log = process(contents, 1436303556)
     log.sort(key=attrgetter("timestamp"))
-    breakpoint()
-    print("done")
-
 
 if __name__ == "__main__":
     main()
