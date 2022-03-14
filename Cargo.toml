@@ -20,8 +20,7 @@ clap_derive = "=3.0.0-beta.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 itertools = "0.10"
-# chrono = { version = "0.4", features = ["serde"] }
-time = { features = ["macros", "serde-human-readable"], git = "https://github.com/znewman01/time", branch = "main" }
+time = { features = ["macros", "serde-human-readable"], git = "https://github.com/time-rs/time", branch = "main" }
 
 [dev-dependencies]
 proptest = "1.0.0"
