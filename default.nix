@@ -17,7 +17,7 @@ in rec {
     rust = rust.toolchain;
     pythonEnvAnalysis = ssanalyze.dependencyEnv;
     pythonEnvLogs = sslogs.dependencyEnv;
-    inherit (python.pkgs) poetry;
+    inherit (python.pkgs) poetry black;
     inherit (pkgs.nodePackages) pyright;
   };
 

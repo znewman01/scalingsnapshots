@@ -6,6 +6,7 @@ from typing import Dict, Set
 INPUT_FILENAME = "testdata"
 SESSION_DURATION = datetime.timedelta(minutes=1)
 
+
 @dataclass
 class PackageData:
 
@@ -19,7 +20,7 @@ class PackageData:
 
     users_in_cur_session: Set[str]
     cur_session_start: datetime.datetime = None
-    downloads_in_cur_session : int = 0
+    downloads_in_cur_session: int = 0
 
     sessions_count: int = 0
     dls_count: int = 0
@@ -50,7 +51,10 @@ class PackageData:
         self.dls_by_hour[hour_of_week] += 1
         self.dls_count += 1
 
-        if self.cur_session_start is None or self.cur_session_start + SESSION_DURATION < timestamp:
+        if (
+            self.cur_session_start is None
+            or self.cur_session_start + SESSION_DURATION < timestamp
+        ):
             # if there was a previous session, add to sessions_by_count
             if self.cur_session_start is not None:
                 self.sessions_by_count[self.downloads_in_cur_session] += 1
@@ -66,22 +70,24 @@ class PackageData:
             self.users_in_cur_session.append(userid)
             self.sessions_by_user[userid] += 1
 
-
     def finish_downloads(self):
         # add the last session count
         self.sessions_by_count[self.downloads_in_cur_session] += 1
 
     def handle_downloads(self, lines):
         for l in lines:
-            words = l.split(',')
-            self.handle_download(words[0], words[1], datetime.datetime.strptime(words[2].strip(), "%Y-%m-%dT%H:%M:%S.%f"))
+            words = l.split(",")
+            self.handle_download(
+                words[0],
+                words[1],
+                datetime.datetime.strptime(words[2].strip(), "%Y-%m-%dT%H:%M:%S.%f"),
+            )
         self.finish_downloads()
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     data = PackageData()
-    f = open(INPUT_FILENAME, 'r')
+    f = open(INPUT_FILENAME, "r")
     data.handle_downloads(f)
 
     print(data.dls_by_user)
@@ -94,4 +100,3 @@ if __name__ == '__main__':
     print(data.sessions_by_count)
     print(data.sessions_count)
     print(data.sessions_by_hour)
-
