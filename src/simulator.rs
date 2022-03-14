@@ -92,10 +92,8 @@ where
 
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
-        let (old_snapshot_id, user_compute_id_time) = {
-            let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
-            time(|| snapshot.id())
-        };
+        let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let (user_compute_id_time, old_snapshot_id) = Duration::time_fn(|| snapshot.id());
 
         // Answer the update metadata server-side.
         let (server_compute, snapshot_diff) =
@@ -108,7 +106,7 @@ where
             .snapshots
             .get_mut(&user)
             .expect("Snapshot was populated, but was then empty.");
-        let user_compute_verify = Duration::span(|| {
+        let (user_compute_verify, _) = Duration::time_fn(|| {
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
         snapshot.update(snapshot_diff);

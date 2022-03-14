@@ -12,13 +12,13 @@
 use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
-use time::macros::declare_format_string;
+use time::serde::format_description;
 use time::OffsetDateTime;
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-declare_format_string!(
+format_description!(
     simple_dt_8601,
     OffsetDateTime,
     "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour sign:mandatory][offset_minute]"

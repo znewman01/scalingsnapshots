@@ -45,8 +45,9 @@ impl RsaAccumulatorDigest {
             == self.value
     }
 
+    #[allow(non_snake_case)]
     pub fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
-        //TODO clean up variable names and clones
+        //TODO clean up clones
         let (a, B) = witness;
         let temp1 = self
             .value
@@ -69,11 +70,15 @@ impl RsaAccumulator {
     }
 
     pub fn add(&mut self, member: Integer) {
+        assert!(member >= 0);
         let is_prime = member.is_probably_prime(30);
         if is_prime == IsPrime::No {
             panic!("member must be prime");
         }
-        self.digest.value.pow_mod_mut(&member, &MODULUS);
+        self.digest
+            .value
+            .pow_mod_mut(&member, &MODULUS)
+            .expect("member should be >=0");
         self.set.insert(member);
     }
 
@@ -87,13 +92,14 @@ impl RsaAccumulator {
 
     //TODO compute all proofs?
     pub fn prove(&self, member: &Integer) -> Option<Integer> {
+        assert!(member >= &0);
         if !self.set.contains(member) {
             return None;
         }
         let mut current = GENERATOR.clone();
         for s in &self.set {
             if s != member {
-                current.pow_mod_mut(s, &MODULUS);
+                current.pow_mod_mut(s, &MODULUS).expect("member > 0");
             }
         }
         Some(current)
@@ -116,7 +122,7 @@ impl RsaAccumulator {
             return None;
         }
 
-        let mut x = GENERATOR.clone();
+        let x = GENERATOR.clone();
 
         return Some((s, x.pow_mod(&t, &MODULUS).unwrap()));
     }
@@ -129,7 +135,7 @@ use proptest::prelude::*;
 impl Arbitrary for RsaAccumulator {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
         return Just(RsaAccumulator::default()).boxed();
     }
 }

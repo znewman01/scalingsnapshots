@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 // use mycrate::fibonacci;
 use rug::Integer;
 use sssim::hash_to_prime::hash_to_prime;
@@ -22,17 +22,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     // create an accumulator with N items
     //make primes
-    static SIZES:&[usize] = &[1, 100];
+    static SIZES: &[usize] = &[1, 100];
 
     let mut group = c.benchmark_group("from_elem");
     group.sample_size(10);
     for s in SIZES.iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(s), &s, |b, s|{
+        group.bench_with_input(BenchmarkId::from_parameter(s), &s, |b, s| {
             b.iter_batched(
                 || {
-                    (0..**s).into_iter().map(|x|{
-                        hash_to_prime(&[x.try_into().unwrap()], &MODULUS).unwrap()
-                    }).collect::<Vec<_>>()
+                    (0..**s)
+                        .into_iter()
+                        .map(|x| hash_to_prime(&[x.try_into().unwrap()], &MODULUS).unwrap())
+                        .collect::<Vec<_>>()
                 },
                 |primes| RsaAccumulator::new(primes),
                 BatchSize::LargeInput,
@@ -43,7 +44,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     //fix with https://arxiv.org/pdf/1805.10941.pdf
     c.bench_function("hash_to_prime 1", |b| {
-        b.iter(||hash_to_prime(black_box(&[8u8]), &MODULUS))
+        b.iter(|| hash_to_prime(black_box(&[8u8]), &MODULUS))
     });
 }
 

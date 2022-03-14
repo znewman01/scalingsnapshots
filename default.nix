@@ -12,7 +12,7 @@ in rec {
   src = gitignore.lib.gitignoreSource ./.;
 
   devTools = {
-    inherit (pkgs) nixfmt nix-linter git age;
+    inherit (pkgs) nixfmt nix-linter git age gnum4;
     inherit (pkgs) libiconv;
     rust = rust.toolchain;
     pythonEnvAnalysis = ssanalyze.dependencyEnv;
@@ -83,6 +83,7 @@ in rec {
           "Cargo.lock"
           "rust-toolchain.toml"
           "src"
+          "benches"
         ]);
     rustSrc = pkgs.lib.cleanSourceWith rec {
       src = ./.;
@@ -93,6 +94,7 @@ in rec {
   in naersk-lib.buildPackage {
     pname = cargoPackage.name;
     inherit (cargoPackage) version;
+    buildInputs = [ pkgs.gnum4 ];
     src = rustSrc;
 
     doCheck = true;
