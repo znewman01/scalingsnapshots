@@ -44,6 +44,10 @@
           sssim = flake-utils.lib.mkApp { drv = project.sssim; };
           sslogs = flake-utils.lib.mkApp { drv = project.sslogs; };
           ssanalyze = flake-utils.lib.mkApp { drv = project.ssanalyze; };
+          generate-package-data = flake-utils.lib.mkApp {
+            drv = project.generate-package-data;
+            exePath = "/bin/summarize_downloads";
+          };
         };
         devShells.default = pkgs.mkShell {
           buildInputs = builtins.attrValues project.devTools;

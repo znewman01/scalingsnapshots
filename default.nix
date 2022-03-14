@@ -17,6 +17,7 @@ in rec {
     rust = rust.toolchain;
     pythonEnvAnalysis = ssanalyze.dependencyEnv;
     pythonEnvLogs = sslogs.dependencyEnv;
+    pythonPackageData = generate-package-data.dependencyEnv;
     inherit (python.pkgs) poetry black;
     inherit (pkgs.nodePackages) pyright;
   };
@@ -114,6 +115,11 @@ in rec {
     inherit python;
     projectDir = ./logparser;
     checkPhase = "pytest";
+  };
+
+  generate-package-data = pkgs.poetry2nix.mkPoetryApplication {
+    inherit python;
+    projectDir = ./generate-package-data;
   };
 
   # The full build: simulator program and Python analysis tools.

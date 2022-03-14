@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "generate-package-data"
+version = "0.1.0"
+description = "Utilities for collecting data on package uploads/downloads."
+authors = ["Zachary Newman", "Marina Moore"]
+license = "MIT"
+
+[tool.poetry.scripts]
+summarize_downloads = 'generate_package_data:main'
+
+
+[build-system]
+requires = ["poetry-core>=1.1.0"]
+build-backend = "poetry.core.masonry.api"
