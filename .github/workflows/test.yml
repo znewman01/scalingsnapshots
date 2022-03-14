@@ -18,3 +18,4 @@ jobs:
     - run: nix run .#sslogs -- --help
     - run: nix run .#ssanalyze -- --help
     - run: nix build .#e2e-pipeline
+    - run: nix run .#generate-package-data -- generate-package-data/testdata
