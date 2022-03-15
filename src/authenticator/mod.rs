@@ -1,3 +1,11 @@
+mod insecure;
+pub use insecure::Authenticator as Insecure;
+
+use crate::{
+    log::{File, PackageRelease},
+    util::DataSized,
+};
+
 // Client-side state
 pub trait ClientSnapshot {
     /// Everything the client needs to verify proofs about metadata.
@@ -7,7 +15,9 @@ pub trait ClientSnapshot {
     ///   (2) the server can update us appropriately
     type Id;
     /// Information needed to update our client snapshot.
-    type Diff;
+    type Diff: DataSized + Clone;
+    /// Information neeeded to verify file membership in the snapshot.
+    type Proof: DataSized + Clone;
 
     fn id(&self) -> Self::Id;
 
@@ -17,15 +27,19 @@ pub trait ClientSnapshot {
 
     /// Verify that applying `diff` doesn't roll back any targets.
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool;
+
+    /// Verify that `file` *is* in this snapshot.
+    fn verify_membership(&self, file: File, proof: Self::Proof) -> bool;
 }
 
 // Server-side state
-pub trait Authenticator<S: ClientSnapshot> {
+pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn refresh_metadata(&self, snapshot_id: &S::Id) -> S::Diff;
-}
 
-mod insecure;
-pub use insecure::Authenticator as Insecure;
+    fn publish(&mut self, release: &PackageRelease) -> ();
+
+    fn request_file(&self, snapshot_id: S::Id, file: File) -> S::Proof;
+}
 
 #[cfg(test)]
 pub(in crate) mod tests {

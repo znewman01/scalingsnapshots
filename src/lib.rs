@@ -6,5 +6,6 @@ pub mod rsa_accumulator;
 pub mod simulator;
 pub mod tuf;
 pub mod tuf_log;
+pub mod util;
 
 pub use authenticator::Authenticator;

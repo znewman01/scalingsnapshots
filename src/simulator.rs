@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, PackageId, PackageRelease, QualifiedFiles, UserId};
 use crate::tuf::{self, SnapshotMetadata};
+use crate::util::{data_size_as_bytes, DataSize, DataSized};
 use crate::Authenticator;
 use serde::{Serialize, Serializer};
 use time::Duration;
@@ -17,24 +18,6 @@ where
             .try_into()
             .expect("too many nanos"),
     )
-}
-
-#[derive(Debug, Serialize)]
-pub struct DataSize {
-    bytes: u64,
-}
-
-impl DataSize {
-    pub fn bytes(bytes: u64) -> DataSize {
-        DataSize { bytes }
-    }
-}
-
-fn data_size_as_bytes<S>(data_size: &DataSize, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.serialize_u64(data_size.bytes)
 }
 
 #[derive(Debug, Serialize)]
@@ -60,13 +43,12 @@ pub struct ResourceUsage {
 /// TODO: manage TUF repo?
 #[derive(Debug)]
 pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
-    #[allow(dead_code)] // TODO: remove once this is actually implemented
     authenticator: A,
     snapshots: HashMap<UserId, S>,
     tuf: SnapshotMetadata,
 }
 
-#[allow(unused_variables)] // TODO: remove once this is actually implemented
+// TODO: investigate the clones, see if you can get rid of them
 impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
@@ -79,21 +61,22 @@ where
         }
     }
 
-    #[allow(dead_code)] // TODO
-    fn process_download(&self, user: UserId, files: &QualifiedFiles) -> ResourceUsage {
-        // 1. server processes files request (may need data on what user has) -> proof
-        //    - time this
-        //    - measure proof bandwidth
-        // 2. user verifies proof
-        //    - time this
-        // 3. measure authenticator storage size
-        //    - TODO: think about how to account for TUF base
-        // TODO: manage user metadata here? (configurable?)
+    fn process_download(&mut self, user: UserId, files: &QualifiedFiles) -> ResourceUsage {
+        let file = &files.0[0]; // TODO: just pass in a QualifiedFile
+        let user_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let user_snapshot_identifier = user_snapshot.id();
+        let (server_request_time, proof) = Duration::time_fn(|| {
+            self.authenticator
+                .request_file(user_snapshot_identifier, file.clone().into())
+        });
+        let (user_verify_time, _) = Duration::time_fn(|| {
+            assert!(user_snapshot.verify_membership(file.clone().into(), proof.clone()))
+        });
         ResourceUsage {
-            server_compute: Duration::ZERO,
-            user_compute: Duration::ZERO,
-            bandwidth: DataSize::bytes(0),
-            storage: DataSize::bytes(0),
+            server_compute: server_request_time,
+            user_compute: user_verify_time,
+            bandwidth: proof.size(),
+            storage: self.authenticator.size(),
         }
     }
 
@@ -105,8 +88,6 @@ where
         // Answer the update metadata server-side.
         let (server_compute, snapshot_diff) =
             Duration::time_fn(|| self.authenticator.refresh_metadata(&old_snapshot_id));
-        let bandwidth = DataSize::bytes(0); // TODO: implement on new_snapshot
-        let storage = DataSize::bytes(0); // TODO: implement on Authenticator
 
         // Check the new snapshot for rollbacks and store it.
         let snapshot = self
@@ -117,34 +98,36 @@ where
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
         let (user_compute_update, _) = Duration::time_fn(|| {
-            snapshot.update(snapshot_diff);
+            snapshot.update(snapshot_diff.clone());
         });
 
         ResourceUsage {
             server_compute,
             user_compute: user_compute_id_time + user_compute_verify + user_compute_update,
-            bandwidth,
-            storage,
+            bandwidth: snapshot_diff.size(),
+            storage: self.authenticator.size(),
         }
     }
 
     fn process_publish(&mut self, package: PackageId, release: PackageRelease) -> ResourceUsage {
-        let files: Vec<tuf::File> = release.files().into_iter().map(tuf::File::from).collect();
+        let files: Vec<tuf::File> = release
+            .clone()
+            .files()
+            .into_iter()
+            .map(tuf::File::from)
+            .collect();
         self.tuf.upsert_target(package.into(), files);
-        // 1. server updates
-        //    - TODO: update all proofs? or lazily? or batch?
-        //    - time this
-        // 2. measure storage size
-        // no user time, bandwidth
+        let (server_upload, _) = Duration::time_fn(|| self.authenticator.publish(&release));
         ResourceUsage {
-            server_compute: Duration::ZERO,
+            server_compute: server_upload,
             user_compute: Duration::ZERO,
-            bandwidth: DataSize::bytes(0),
-            storage: DataSize::bytes(0),
+            bandwidth: DataSize::zero(),
+            storage: self.authenticator.size(),
         }
     }
 
     pub fn process(&mut self, action: Action) -> ResourceUsage {
+        // TODO: batch publish?
         match action {
             Action::Download { user, files } => self.process_download(user, &files),
             Action::RefreshMetadata { user } => self.process_refresh_metadata(user),

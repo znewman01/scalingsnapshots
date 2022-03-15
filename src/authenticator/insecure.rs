@@ -3,7 +3,11 @@ use authenticator::ClientSnapshot;
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::authenticator;
+use crate::{
+    authenticator,
+    log::{File, PackageRelease},
+    util::{DataSize, DataSized},
+};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Debug)]
@@ -13,6 +17,7 @@ impl ClientSnapshot for Snapshot {
     type Digest = ();
     type Id = ();
     type Diff = ();
+    type Proof = ();
 
     fn id(&self) -> Self::Id {}
 
@@ -21,6 +26,10 @@ impl ClientSnapshot for Snapshot {
     fn digest(&self) -> Self::Digest {}
 
     fn check_no_rollback(&self, _: &Self::Diff) -> bool {
+        true
+    }
+
+    fn verify_membership(&self, _: File, _: Self::Proof) -> bool {
         true
     }
 }
@@ -32,6 +41,7 @@ impl ClientSnapshot for Snapshot {
 #[derive(Default, Debug)]
 pub struct Authenticator {}
 
+#[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn refresh_metadata(
         &self,
@@ -39,8 +49,21 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     ) -> <Snapshot as ClientSnapshot>::Diff {
     }
 
-    // TODO: storage usage
-    // (when implementing for vanilla TUF, use spreadsheet to estimate this)
+    fn publish(&mut self, release: &PackageRelease) -> () {}
+
+    fn request_file(
+        &self,
+        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        file: File,
+    ) -> <Snapshot as ClientSnapshot>::Proof {
+        ()
+    }
+}
+
+impl DataSized for Authenticator {
+    fn size(&self) -> DataSize {
+        DataSize::zero()
+    }
 }
 
 #[cfg(test)]

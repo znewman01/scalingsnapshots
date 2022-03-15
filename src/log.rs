@@ -156,8 +156,14 @@ impl QualifiedFile {
     }
 }
 
+impl From<QualifiedFile> for File {
+    fn from(file: QualifiedFile) -> Self {
+        File::new(file.path.file, file.length)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct QualifiedFiles(Vec<QualifiedFile>);
+pub struct QualifiedFiles(pub Vec<QualifiedFile>);
 
 impl From<Vec<QualifiedFile>> for QualifiedFiles {
     fn from(requests: Vec<QualifiedFile>) -> Self {
