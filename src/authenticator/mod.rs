@@ -8,8 +8,6 @@ use crate::{
 
 // Client-side state
 pub trait ClientSnapshot {
-    /// Everything the client needs to verify proofs about metadata.
-    type Digest;
     /// Identifies what digest we have, so
     ///   (1) the server can give us proofs against it
     ///   (2) the server can update us appropriately
@@ -22,8 +20,6 @@ pub trait ClientSnapshot {
     fn id(&self) -> Self::Id;
 
     fn update(&mut self, diff: Self::Diff);
-
-    fn digest(&self) -> Self::Digest;
 
     /// Verify that applying `diff` doesn't roll back any targets.
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool;

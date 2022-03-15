@@ -14,7 +14,6 @@ use crate::{
 pub struct Snapshot {}
 
 impl ClientSnapshot for Snapshot {
-    type Digest = ();
     type Id = ();
     type Diff = ();
     type Proof = ();
@@ -22,8 +21,6 @@ impl ClientSnapshot for Snapshot {
     fn id(&self) -> Self::Id {}
 
     fn update(&mut self, _diff: Self::Diff) {}
-
-    fn digest(&self) -> Self::Digest {}
 
     fn check_no_rollback(&self, _: &Self::Diff) -> bool {
         true
