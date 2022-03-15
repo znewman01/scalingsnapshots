@@ -30,6 +30,13 @@ impl DataSize {
     }
 }
 
+fn data_size_as_bytes<S>(data_size: &DataSize, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_u64(data_size.bytes)
+}
+
 #[derive(Debug, Serialize)]
 pub struct ResourceUsage {
     /// Server-side computation time used to handle this request.
@@ -38,9 +45,9 @@ pub struct ResourceUsage {
     /// Client-side computation time used to handle this request.
     #[serde(rename = "user_compute_ns", serialize_with = "serialize_ns")]
     user_compute: Duration, // TODO: make optional
-    #[serde(flatten)]
+    #[serde(rename = "bandwidth_bytes", serialize_with = "data_size_as_bytes")]
     bandwidth: DataSize,
-    #[serde(flatten)]
+    #[serde(rename = "server_storage_bytes", serialize_with = "data_size_as_bytes")]
     storage: DataSize,
 }
 
@@ -109,11 +116,13 @@ where
         let (user_compute_verify, _) = Duration::time_fn(|| {
             assert!(snapshot.check_no_rollback(&snapshot_diff));
         });
-        snapshot.update(snapshot_diff);
+        let (user_compute_update, _) = Duration::time_fn(|| {
+            snapshot.update(snapshot_diff);
+        });
 
         ResourceUsage {
             server_compute,
-            user_compute: user_compute_id_time + user_compute_verify,
+            user_compute: user_compute_id_time + user_compute_verify + user_compute_update,
             bandwidth,
             storage,
         }
