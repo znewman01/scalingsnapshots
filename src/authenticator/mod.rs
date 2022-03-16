@@ -1,7 +1,7 @@
 mod insecure;
-// mod vanilla_tuf;
+mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
-// pub use vanilla_tuf::Authenticator as VanillaTuf;
+pub use vanilla_tuf::Authenticator as VanillaTuf;
 
 use crate::{log::PackageId, util::DataSized};
 

@@ -14,7 +14,7 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use crate::{
     authenticator,
-    log::FileName,
+    log::PackageId,
     util::{DataSize, DataSized},
 };
 
@@ -33,7 +33,7 @@ impl DataSized for Metadata {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug)]
 pub struct Snapshot {
-    files: HashMap<FileName, Metadata>,
+    packages: HashMap<PackageId, Metadata>,
     id: u64,
 }
 
@@ -42,8 +42,8 @@ impl DataSized for Snapshot {
         // TODO: better to serialize then figure out the size?
         // also gzip?
         let mut size: u64 = TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (filename, metadata) in self.files.iter() {
-            size += filename.size().bytes();
+        for (package_id, metadata) in self.packages.iter() {
+            size += package_id.size().bytes();
             size += metadata.size().bytes();
         }
         DataSize::from_bytes(size)
@@ -61,13 +61,13 @@ impl ClientSnapshot for Snapshot {
     }
 
     fn update(&mut self, diff: Self::Diff) {
-        self.files = diff.files;
+        self.packages = diff.packages;
         self.id = diff.id
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (file, metadata) in self.files.iter() {
-            let new_metadata = match diff.files.get(&file) {
+        for (package_id, metadata) in self.packages.iter() {
+            let new_metadata = match diff.packages.get(&package_id) {
                 None => {
                     return false;
                 }
@@ -80,8 +80,8 @@ impl ClientSnapshot for Snapshot {
         true
     }
 
-    fn verify_membership(&self, file: FileName, _: Self::Proof) -> bool {
-        self.files.get(&file).is_some()
+    fn verify_membership(&self, package_id: &PackageId, _: Self::Proof) -> bool {
+        self.packages.get(&package_id).is_some()
     }
 }
 
@@ -96,18 +96,18 @@ pub struct Authenticator {
 impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn refresh_metadata(
         &self,
-        snapshot_id: &<Snapshot as ClientSnapshot>::Id,
+        snapshot_id: <Snapshot as ClientSnapshot>::Id,
     ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        if snapshot_id == &self.snapshot.id() {
+        if snapshot_id == self.snapshot.id() {
             // already up to date
             return None;
         }
         Some(self.snapshot.clone())
     }
 
-    fn publish(&mut self, file: &FileName) -> () {
+    fn publish(&mut self, package: &PackageId) -> () {
         self.snapshot.id += 1;
-        let entry = self.snapshot.files.entry(file.clone());
+        let entry = self.snapshot.packages.entry(package.clone());
         let mut metadata = entry.or_insert_with(Metadata::default);
         metadata.revision += 1;
     }
@@ -115,7 +115,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn request_file(
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
-        file: FileName,
+        package: &PackageId,
     ) -> <Snapshot as ClientSnapshot>::Proof {
         ()
     }
