@@ -1,5 +1,5 @@
-{"action": {"Download": {"user": 1, "package": {"id": "openssl", "length": null}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
-{"action": {"Download": {"user": 1, "package": {"id": "libc", "length": 1000}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
-{"action": {"RefreshMetadata": {"user": 2}}, "timestamp": "1970-01-01 00:00:01.0 +0000"}
+{"action": {"Download": {"user": "1", "package": {"id": "openssl", "length": null}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
+{"action": {"Download": {"user": "1", "package": {"id": "libc", "length": 1000}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
+{"action": {"RefreshMetadata": {"user": "2"}}, "timestamp": "1970-01-01 00:00:01.0 +0000"}
 {"action": {"Publish": {"package": {"id": "openssl", "length": 1000}}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}
 {"action": {"Publish": {"package": {"id": "libc", "length": null}}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}

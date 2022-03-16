@@ -2,14 +2,14 @@ use std::io::{self, Write};
 
 use time::macros::datetime;
 
-use sssim::log::{Action, Entry, Log, Package, UserId};
+use sssim::log::{Action, Entry, Log, Package, PackageId, UserId};
 
 fn main() {
     let log = Log::from(vec![
         Entry::new(
             datetime!(1970-01-01 00:00:00).assume_utc(),
             Action::Download {
-                user: UserId::from(1),
+                user: UserId::from("1".to_string()),
                 package: Package {
                     id: "openssl".to_string().into(),
                     length: None,
@@ -19,9 +19,9 @@ fn main() {
         Entry::new(
             datetime!(1970-01-01 00:00:00).assume_utc(),
             Action::Download {
-                user: UserId::from(1),
+                user: UserId::from("1".to_string()),
                 package: Package {
-                    id: "libc".to_string().into(),
+                    id: PackageId::from("libc".to_string()),
                     length: Some(1000),
                 },
             },
@@ -29,14 +29,14 @@ fn main() {
         Entry::new(
             datetime!(1970-01-01 00:00:01).assume_utc(),
             Action::RefreshMetadata {
-                user: UserId::from(2),
+                user: UserId::from("2".to_string()),
             },
         ),
         Entry::new(
             datetime!(1970-01-01 00:00:02).assume_utc(),
             Action::Publish {
                 package: Package {
-                    id: "openssl".to_string().into(),
+                    id: PackageId::from("openssl".to_string()),
                     length: Some(1000),
                 },
             },
@@ -45,7 +45,7 @@ fn main() {
             datetime!(1970-01-01 00:00:02).assume_utc(),
             Action::Publish {
                 package: Package {
-                    id: "libc".to_string().into(),
+                    id: PackageId::from("libc".to_string()),
                     length: None,
                 },
             },

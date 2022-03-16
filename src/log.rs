@@ -28,11 +28,11 @@ format_description!(
 // Primitives
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Hash, Eq, PartialEq)]
-pub struct UserId(u64);
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
+pub struct UserId(String);
 
-impl From<u64> for UserId {
-    fn from(id: u64) -> Self {
+impl From<String> for UserId {
+    fn from(id: String) -> Self {
         UserId(id)
     }
 }

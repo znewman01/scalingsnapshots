@@ -6,7 +6,7 @@ import dataclasses
 import datetime
 
 from dataclasses import dataclass
-from typing import Union, List, Dict, Any, Optional
+from typing import Union, Dict, Any, Optional
 
 
 @dataclass
@@ -17,13 +17,13 @@ class Package:
 
 @dataclass
 class Download:
-    user: int
+    user: str
     package: Package
 
 
 @dataclass
 class RefreshMetadata:
-    user: int
+    user: str
 
 
 @dataclass
@@ -49,19 +49,19 @@ def main():
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
             ),
-            action=Download(user=1, package=Package(id="openssl", length=None)),
+            action=Download(user="1", package=Package(id="openssl", length=None)),
         ),
         LogEntry(
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
             ),
-            action=Download(user=1, package=Package(id="libc", length=1000)),
+            action=Download(user="1", package=Package(id="libc", length=1000)),
         ),
         LogEntry(
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 1, tzinfo=datetime.timezone.utc
             ),
-            action=RefreshMetadata(user=2),
+            action=RefreshMetadata(user="2"),
         ),
         LogEntry(
             timestamp=datetime.datetime(
