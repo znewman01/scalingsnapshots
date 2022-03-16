@@ -1,4 +1,3 @@
-#![allow(dead_code)] // TODO: fix once we're actually using this
 //! Concepts for log inputs.
 //!
 //! Most package repos have a model that involves the concepts:
@@ -9,7 +8,6 @@
 //!
 //! The TUF concepts are a little different. It's up to the Repository
 //! Simulator to translate between them.
-use itertools::Itertools;
 use serde::Deserialize;
 use serde::Serialize;
 use time::serde::format_description;
@@ -55,23 +53,7 @@ impl From<String> for PackageId {
     }
 }
 
-#[cfg_attr(test, derive(Arbitrary))]
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct FileName(String);
-
-impl From<String> for FileName {
-    fn from(id: String) -> Self {
-        FileName(id)
-    }
-}
-
-impl From<FileName> for String {
-    fn from(name: FileName) -> Self {
-        name.0
-    }
-}
-
-impl DataSized for FileName {
+impl DataSized for PackageId {
     fn size(&self) -> DataSize {
         DataSize::from_bytes(
             self.0
@@ -82,138 +64,26 @@ impl DataSized for FileName {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct PackageReleaseId(String);
-
-impl From<String> for PackageReleaseId {
-    fn from(id: String) -> Self {
-        PackageReleaseId(id)
-    }
-}
-
 // Concepts
 
-#[derive(Debug)]
-pub struct Release {
-    packages: Vec<Package>,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
-    id: PackageId,
-    releases: Vec<PackageRelease>,
-}
-
-#[cfg_attr(test, derive(Arbitrary))]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct File {
-    name: FileName,
-    length: Option<u64>,
-}
-
-impl File {
-    pub fn new(name: FileName, length: Option<u64>) -> Self {
-        Self { name, length }
-    }
-
-    pub fn name(self) -> FileName {
-        self.name
-    }
-
-    pub fn length(&self) -> Option<u64> {
-        self.length
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PackageRelease {
-    version: PackageReleaseId,
-    files: Vec<File>,
-}
-
-impl PackageRelease {
-    pub fn new(version: PackageReleaseId, files: Vec<File>) -> Self {
-        Self { version, files }
-    }
-
-    pub fn files(self) -> Vec<File> {
-        self.files
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FileRequest {
-    package: PackageId,
-    release: PackageReleaseId,
-    file: FileName,
-}
-
-impl FileRequest {
-    pub fn new(package: PackageId, release: PackageReleaseId, file: FileName) -> Self {
-        Self {
-            package,
-            release,
-            file,
-        }
-    }
-}
-
-impl From<FileRequest> for FileName {
-    fn from(request: FileRequest) -> Self {
-        request.file
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct QualifiedFile {
-    pub path: FileRequest,
-    length: Option<u64>,
-}
-
-impl QualifiedFile {
-    pub fn new(path: FileRequest, length: Option<u64>) -> Self {
-        Self { path, length }
-    }
-}
-
-impl From<QualifiedFile> for File {
-    fn from(file: QualifiedFile) -> Self {
-        File::new(file.path.file, file.length)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct QualifiedFiles(pub Vec<QualifiedFile>);
-
-impl From<Vec<QualifiedFile>> for QualifiedFiles {
-    fn from(requests: Vec<QualifiedFile>) -> Self {
-        Self(requests)
-    }
-}
-
-impl QualifiedFiles {
-    /// Return a list of unique package IDs in this `QualifiedFiles`.
-    pub fn packages(&self) -> Vec<PackageId> {
-        self.0
-            .iter()
-            .map(|r| r.path.package.clone())
-            .unique()
-            .collect()
-    }
+    pub id: PackageId,
+    pub length: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
-    Download { user: UserId, files: QualifiedFiles },
+    Download { user: UserId, package: Package },
     RefreshMetadata { user: UserId },
-    Publish { file: FileName },
+    Publish { package: Package },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
     #[serde(with = "simple_dt_8601")]
     timestamp: OffsetDateTime,
-    action: Action,
+    pub action: Action,
 }
 
 impl Entry {

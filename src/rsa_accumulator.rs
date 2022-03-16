@@ -143,7 +143,6 @@ impl Arbitrary for RsaAccumulator {
 #[cfg(test)]
 mod test {
     use super::*;
-    use proptest::prelude::*;
 
     fn primes() -> impl Strategy<Value = Integer> {
         return Just(5.into());
@@ -163,7 +162,7 @@ mod test {
 
     #[test]
     fn test_rsa_accumulator() {
-        let mut acc = RsaAccumulator::default();
+        let acc = RsaAccumulator::default();
         assert_eq!(acc.digest.value, GENERATOR.clone());
     }
 

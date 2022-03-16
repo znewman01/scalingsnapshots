@@ -50,7 +50,7 @@ from dataclasses import dataclass
 
 from tqdm import tqdm
 
-from sslogs.logs import FilePath, LogEntry, Publish, File, PackageRelease
+from sslogs.logs import LogEntry, Publish, Package
 
 
 @dataclass
@@ -68,13 +68,12 @@ def tar_entries_to_log_entries(
     release_id: ReleaseId, infos: List[tarfile.TarInfo]
 ) -> LogEntry:
     mtime = datetime.datetime.fromtimestamp(max(info.mtime for info in infos))
-    return [
-        LogEntry(
-            timestamp=mtime,
-            action=Publish(file=info.name),
-        )
-        for info in infos
-    ]
+    # This is what the user ultimately downloads.
+    length = sum([i.size for i in infos if not i.name.endswith("package.json")])
+    return LogEntry(
+        timestamp=mtime,
+        action=Publish(package=Package(release_id.package, length)),
+    )
 
 
 # def _tar_info_to_triplet(info: tarfile.TarInfo) -> Tuple[Tuple[package,]
@@ -82,11 +81,10 @@ def process(archive: Iterable[tarfile.TarInfo]):
     archive_filtered = (
         f for f in archive if f.name.split("/")[-1] != "preferred-versions"
     )
-    grouped_entries = [
+    return [
         tar_entries_to_log_entries(r, list(i))
         for r, i in itertools.groupby(archive_filtered, key=ReleaseId.from_tarinfo)
     ]
-    return [x for y in grouped_entries for x in y]
 
 
 def main():

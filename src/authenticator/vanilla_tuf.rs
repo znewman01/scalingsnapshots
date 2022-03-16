@@ -1,3 +1,10 @@
+//! TODO: this is Mercury, not vanilla TUF.
+//! Vanilla TUF downloads *all* metadata:
+//! - snapshot: map from filename to HASH of targets metadata
+//! - targets metadata, which includes version number
+//!   - only new targets, because duh
+//!
+//! TODO: delta variant of Mercury
 use std::collections::HashMap;
 
 use authenticator::ClientSnapshot;

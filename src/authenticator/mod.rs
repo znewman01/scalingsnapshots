@@ -1,9 +1,9 @@
 mod insecure;
-mod vanilla_tuf;
+// mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
-pub use vanilla_tuf::Authenticator as VanillaTuf;
+// pub use vanilla_tuf::Authenticator as VanillaTuf;
 
-use crate::{log::FileName, util::DataSized};
+use crate::{log::PackageId, util::DataSized};
 
 // Client-side state
 pub trait ClientSnapshot {
@@ -24,16 +24,16 @@ pub trait ClientSnapshot {
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool;
 
     /// Verify that `file` *is* in this snapshot.
-    fn verify_membership(&self, file: FileName, proof: Self::Proof) -> bool;
+    fn verify_membership(&self, package: &PackageId, proof: Self::Proof) -> bool;
 }
 
 // Server-side state
 pub trait Authenticator<S: ClientSnapshot>: DataSized {
-    fn refresh_metadata(&self, snapshot_id: &S::Id) -> Option<S::Diff>;
+    fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
 
-    fn publish(&mut self, release: &FileName) -> ();
+    fn publish(&mut self, package: &PackageId) -> ();
 
-    fn request_file(&self, snapshot_id: S::Id, file: FileName) -> S::Proof;
+    fn request_file(&self, snapshot_id: S::Id, package: &PackageId) -> S::Proof;
 }
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ pub(in crate) mod tests {
         A: Authenticator<S>,
     {
         let id = client_state.id();
-        let maybe_diff = server_state.refresh_metadata(&id);
+        let maybe_diff = server_state.refresh_metadata(id);
         if let Some(diff) = maybe_diff {
             prop_assert!(
                 client_state.check_no_rollback(&diff),

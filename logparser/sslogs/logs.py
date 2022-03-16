@@ -10,34 +10,15 @@ from typing import Union, List, Dict, Any, Optional
 
 
 @dataclass
-class File:
-    name: str
+class Package:
+    id: str
     length: Optional[int] = None
-
-
-@dataclass
-class FilePath:
-    package: str
-    release: str
-    file: str
-
-
-@dataclass
-class QualifiedFile:
-    path: FilePath
-    length: Optional[int] = None
-
-
-@dataclass
-class PackageRelease:
-    version: str
-    files: List[File]
 
 
 @dataclass
 class Download:
     user: int
-    files: List[QualifiedFile]
+    package: Package
 
 
 @dataclass
@@ -47,7 +28,7 @@ class RefreshMetadata:
 
 @dataclass
 class Publish:
-    file: str
+    package: Package
 
 
 @dataclass
@@ -68,22 +49,13 @@ def main():
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
             ),
-            action=Download(
-                user=1,
-                files=[
-                    QualifiedFile(
-                        path=FilePath(
-                            package="libc", release="0.5", file="libc-0.5.tar.gz"
-                        ),
-                        length=1000,
-                    ),
-                    QualifiedFile(
-                        FilePath(
-                            package="libc", release="0.5", file="libc-0.5-docs.tar.gz"
-                        ),
-                    ),
-                ],
+            action=Download(user=1, package=Package(id="openssl", length=None)),
+        ),
+        LogEntry(
+            timestamp=datetime.datetime(
+                1970, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
             ),
+            action=Download(user=1, package=Package(id="libc", length=1000)),
         ),
         LogEntry(
             timestamp=datetime.datetime(
@@ -95,17 +67,13 @@ def main():
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 2, tzinfo=datetime.timezone.utc
             ),
-            action=Publish(
-                file="openssl-1.0.0-sparc.tar.gz",
-            ),
+            action=Publish(package=Package(id="openssl", length=1000)),
         ),
         LogEntry(
             timestamp=datetime.datetime(
                 1970, 1, 1, 0, 0, 2, tzinfo=datetime.timezone.utc
             ),
-            action=Publish(
-                file="openssl-1.0.0-amd64.tar.gz",
-            ),
+            action=Publish(package=Package(id="libc", length=None)),
         ),
     ]
     import json

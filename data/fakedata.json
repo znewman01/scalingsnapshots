@@ -1,4 +1,5 @@
-{"action": {"Download": {"user": 1, "files": [{"path": {"package": "libc", "release": "0.5", "file": "libc-0.5.tar.gz"}, "length": 1000}, {"path": {"package": "libc", "release": "0.5", "file": "libc-0.5-docs.tar.gz"}, "length": null}]}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
+{"action": {"Download": {"user": 1, "package": {"id": "openssl", "length": null}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
+{"action": {"Download": {"user": 1, "package": {"id": "libc", "length": 1000}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
 {"action": {"RefreshMetadata": {"user": 2}}, "timestamp": "1970-01-01 00:00:01.0 +0000"}
-{"action": {"Publish": {"file": "openssl-1.0.0-sparc.tar.gz"}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}
-{"action": {"Publish": {"file": "openssl-1.0.0-amd64.tar.gz"}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}
+{"action": {"Publish": {"package": {"id": "openssl", "length": 1000}}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}
+{"action": {"Publish": {"package": {"id": "libc", "length": null}}}, "timestamp": "1970-01-01 00:00:02.0 +0000"}
