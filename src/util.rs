@@ -6,12 +6,17 @@ pub struct DataSize {
 }
 
 impl DataSize {
-    pub fn bytes(bytes: u64) -> Self {
+    pub fn from_bytes(bytes: u64) -> Self {
         DataSize { bytes }
     }
 
     pub fn zero() -> Self {
         Self::default()
+    }
+
+    /// Get the data size's bytes.
+    pub fn bytes(&self) -> u64 {
+        self.bytes
     }
 }
 
@@ -29,5 +34,14 @@ pub trait DataSized {
 impl DataSized for () {
     fn size(&self) -> DataSize {
         DataSize::zero()
+    }
+}
+
+impl<T: DataSized> DataSized for Option<T> {
+    fn size(&self) -> DataSize {
+        match self {
+            None => DataSize::zero(),
+            Some(inner) => inner.size(),
+        }
     }
 }

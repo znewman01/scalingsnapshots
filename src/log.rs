@@ -18,6 +18,9 @@ use time::OffsetDateTime;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
+use crate::util::DataSize;
+use crate::util::DataSized;
+
 format_description!(
     simple_dt_8601,
     OffsetDateTime,
@@ -65,6 +68,17 @@ impl From<String> for FileName {
 impl From<FileName> for String {
     fn from(name: FileName) -> Self {
         name.0
+    }
+}
+
+impl DataSized for FileName {
+    fn size(&self) -> DataSize {
+        DataSize::from_bytes(
+            self.0
+                .len()
+                .try_into()
+                .expect("Hopefully this file name is not >2^64 characters"),
+        )
     }
 }
 
@@ -144,9 +158,15 @@ impl FileRequest {
     }
 }
 
+impl From<FileRequest> for FileName {
+    fn from(request: FileRequest) -> Self {
+        request.file
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct QualifiedFile {
-    path: FileRequest,
+    pub path: FileRequest,
     length: Option<u64>,
 }
 
@@ -184,17 +204,9 @@ impl QualifiedFiles {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
-    Download {
-        user: UserId,
-        files: QualifiedFiles,
-    },
-    RefreshMetadata {
-        user: UserId,
-    },
-    Publish {
-        package: PackageId,
-        release: PackageRelease,
-    },
+    Download { user: UserId, files: QualifiedFiles },
+    RefreshMetadata { user: UserId },
+    Publish { file: FileName },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

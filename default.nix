@@ -140,8 +140,10 @@ in rec {
       PATH=${scalingsnapshots}/bin/:${pkgs.jq}/bin/:$PATH
       mkdir -p $out
 
-      # Check that our fakedata matches the schema (for both Rust and Python).
+      #
+      echo "Check that our fakedata matches the schema (for Rust)."
       diff <(jq --sort-keys < ${data}/fakedata.json) <(dummy_logs | jq --sort-keys)
+      echo "Check that our fakedata matches the schema (for Python)."
       diff <(jq --sort-keys < ${data}/fakedata.json) <(sslogs_test_format | jq --sort-keys)
 
       # Try running the entire pipeline

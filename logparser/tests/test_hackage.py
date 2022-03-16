@@ -38,47 +38,27 @@ def test_process():
     expected = [
         LogEntry(
             timestamp=datetime.datetime(2021, 1, 1, 0, 0, 3),
-            action=Publish(
-                package="foo",
-                release=PackageRelease(
-                    version="0.0.1",
-                    files=[
-                        File(name="foo/0.0.1/foo.tar.gz", length=0),
-                        File(name="foo/0.0.1/foo.cabal", length=1000),
-                        File(name="foo/0.0.1/package.json", length=2000),
-                    ],
-                ),
-            ),
+            action=Publish(file="foo/0.0.1/foo.tar.gz"),
+        ),
+        LogEntry(
+            timestamp=datetime.datetime(2021, 1, 1, 0, 0, 3),
+            action=Publish(file="foo/0.0.1/foo.cabal"),
+        ),
+        LogEntry(
+            timestamp=datetime.datetime(2021, 1, 1, 0, 0, 3),
+            action=Publish(file="foo/0.0.1/package.json"),
         ),
         LogEntry(
             timestamp=datetime.datetime(2021, 1, 1, 0, 0, 4),
-            action=Publish(
-                package="bar",
-                release=PackageRelease(
-                    version="0.0.2",
-                    files=[File(name="bar/0.0.2/package.json", length=3000)],
-                ),
-            ),
+            action=Publish(file="bar/0.0.2/package.json"),
         ),
         LogEntry(
             timestamp=datetime.datetime(2021, 1, 1, 0, 0, 6),
-            action=Publish(
-                package="baz",
-                release=PackageRelease(
-                    version="0.0.3",
-                    files=[File(name="baz/0.0.3/package.json", length=4000)],
-                ),
-            ),
+            action=Publish(file="baz/0.0.3/package.json"),
         ),
         LogEntry(
             timestamp=datetime.datetime(2021, 1, 1, 0, 0, 5),
-            action=Publish(
-                package="bar",
-                release=PackageRelease(
-                    version="0.0.2",
-                    files=[File(name="bar/0.0.2/bar.cabal", length=5000)],
-                ),
-            ),
+            action=Publish(file="bar/0.0.2/bar.cabal"),
         ),
     ]
     assert actual == expected

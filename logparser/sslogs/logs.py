@@ -47,8 +47,7 @@ class RefreshMetadata:
 
 @dataclass
 class Publish:
-    package: str
-    release: PackageRelease
+    file: str
 
 
 @dataclass
@@ -97,14 +96,15 @@ def main():
                 1970, 1, 1, 0, 0, 2, tzinfo=datetime.timezone.utc
             ),
             action=Publish(
-                package="openssl",
-                release=PackageRelease(
-                    version="1.0.0",
-                    files=[
-                        File(name="openssl-1.0.0-sparc.tar.gz", length=1000),
-                        File(name="openssl-1.0.0-amd64.tar.gz"),
-                    ],
-                ),
+                file="openssl-1.0.0-sparc.tar.gz",
+            ),
+        ),
+        LogEntry(
+            timestamp=datetime.datetime(
+                1970, 1, 1, 0, 0, 2, tzinfo=datetime.timezone.utc
+            ),
+            action=Publish(
+                file="openssl-1.0.0-amd64.tar.gz",
             ),
         ),
     ]

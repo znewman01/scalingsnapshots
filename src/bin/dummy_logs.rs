@@ -2,9 +2,7 @@ use std::io::{self, Write};
 
 use time::macros::datetime;
 
-use sssim::log::{
-    Action, Entry, File, FileRequest, Log, PackageRelease, QualifiedFile, QualifiedFiles, UserId,
-};
+use sssim::log::{Action, Entry, FileRequest, Log, QualifiedFile, QualifiedFiles, UserId};
 
 fn main() {
     let log = Log::from(vec![
@@ -41,14 +39,13 @@ fn main() {
         Entry::new(
             datetime!(1970-01-01 00:00:02).assume_utc(),
             Action::Publish {
-                package: "openssl".to_string().into(),
-                release: PackageRelease::new(
-                    "1.0.0".to_string().into(),
-                    vec![
-                        File::new("openssl-1.0.0-sparc.tar.gz".to_string().into(), Some(1000)),
-                        File::new("openssl-1.0.0-amd64.tar.gz".to_string().into(), None),
-                    ],
-                ),
+                file: "openssl-1.0.0-sparc.tar.gz".to_string().into(),
+            },
+        ),
+        Entry::new(
+            datetime!(1970-01-01 00:00:02).assume_utc(),
+            Action::Publish {
+                file: "openssl-1.0.0-amd64.tar.gz".to_string().into(),
             },
         ),
     ]);

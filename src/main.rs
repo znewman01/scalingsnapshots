@@ -9,7 +9,6 @@ use serde::Serialize;
 use sssim::authenticator::ClientSnapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
-use sssim::tuf::SnapshotMetadata;
 use sssim::{authenticator, Authenticator};
 
 #[derive(Parser, Debug)]
@@ -27,9 +26,7 @@ where
     S: ClientSnapshot + Default + Debug,
     A: Authenticator<S> + Debug,
 {
-    // TODO: actually initialize
-    let initial_tuf_state = SnapshotMetadata::default();
-    let mut simulator = Simulator::new(authenticator, initial_tuf_state);
+    let mut simulator = Simulator::new(authenticator);
 
     for line in io::stdin().lines() {
         let result = serde_json::from_str(&line.expect("stdin failed"));

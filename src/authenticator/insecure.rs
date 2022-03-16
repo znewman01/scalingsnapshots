@@ -5,7 +5,7 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use crate::{
     authenticator,
-    log::{File, PackageRelease},
+    log::FileName,
     util::{DataSize, DataSized},
 };
 
@@ -26,7 +26,7 @@ impl ClientSnapshot for Snapshot {
         true
     }
 
-    fn verify_membership(&self, _: File, _: Self::Proof) -> bool {
+    fn verify_membership(&self, _: FileName, _: Self::Proof) -> bool {
         true
     }
 }
@@ -43,15 +43,16 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn refresh_metadata(
         &self,
         _snapshot_id: &<Snapshot as ClientSnapshot>::Id,
-    ) -> <Snapshot as ClientSnapshot>::Diff {
+    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
+        None
     }
 
-    fn publish(&mut self, release: &PackageRelease) -> () {}
+    fn publish(&mut self, release: &FileName) -> () {}
 
     fn request_file(
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
-        file: File,
+        file: FileName,
     ) -> <Snapshot as ClientSnapshot>::Proof {
         ()
     }
