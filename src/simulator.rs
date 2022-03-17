@@ -68,13 +68,14 @@ where
         }
 
         let user_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
-        let (server_request_time, proof) = Duration::time_fn(|| {
+        let (server_request_time, (revision, proof)) = Duration::time_fn(|| {
             self.authenticator
                 .request_file(user_snapshot.id(), &package.id)
         });
         let bandwidth = proof.size();
-        let (user_verify_time, _) =
-            Duration::time_fn(|| assert!(user_snapshot.verify_membership(&package.id, proof)));
+        let (user_verify_time, _) = Duration::time_fn(|| {
+            assert!(user_snapshot.verify_membership(&package.id, revision, proof))
+        });
 
         ResourceUsage {
             server_compute: server_request_time,

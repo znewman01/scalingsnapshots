@@ -7,13 +7,11 @@
 //! TODO: delta variant of Mercury
 use std::collections::HashMap;
 
-use authenticator::ClientSnapshot;
-
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use crate::{
-    authenticator,
+    authenticator::{self, ClientSnapshot, Revision},
     log::PackageId,
     util::{DataSize, DataSized},
 };
@@ -21,7 +19,7 @@ use crate::{
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Debug, Clone)]
 pub struct Metadata {
-    revision: u64,
+    revision: Revision,
 }
 
 impl DataSized for Metadata {
@@ -80,8 +78,21 @@ impl ClientSnapshot for Snapshot {
         true
     }
 
-    fn verify_membership(&self, package_id: &PackageId, _: Self::Proof) -> bool {
-        self.packages.get(&package_id).is_some()
+    fn verify_membership(
+        &self,
+        package_id: &PackageId,
+        revision: Revision,
+        _: Self::Proof,
+    ) -> bool {
+        if let Some(metadata) = self.packages.get(&package_id) {
+            if metadata.revision != revision {
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -109,15 +120,20 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());
         let mut metadata = entry.or_insert_with(Metadata::default);
-        metadata.revision += 1;
+        metadata.revision.0 += 1;
     }
 
     fn request_file(
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         package: &PackageId,
-    ) -> <Snapshot as ClientSnapshot>::Proof {
-        ()
+    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+        let metadata = self
+            .snapshot
+            .packages
+            .get(package)
+            .expect("Should never get a request for a package that's missing.");
+        (metadata.revision, ())
     }
 }
 

@@ -4,7 +4,7 @@ use authenticator::ClientSnapshot;
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use crate::{
-    authenticator,
+    authenticator::{self, Revision},
     log::PackageId,
     util::{DataSize, DataSized},
 };
@@ -26,7 +26,7 @@ impl ClientSnapshot for Snapshot {
         true
     }
 
-    fn verify_membership(&self, _: &PackageId, _: Self::Proof) -> bool {
+    fn verify_membership(&self, _: &PackageId, _: Revision, _: Self::Proof) -> bool {
         true
     }
 }
@@ -53,8 +53,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         file: &PackageId,
-    ) -> <Snapshot as ClientSnapshot>::Proof {
-        ()
+    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+        (Revision::from(0), ())
     }
 }
 
