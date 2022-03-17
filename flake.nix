@@ -32,9 +32,14 @@
           inherit system;
           overlays = [ poetry2nix.overlay ];
         };
-        rust = fenix.packages.${system}.latest;
-        naersk-lib =
-          naersk.lib.${system}.override { inherit (rust) rustc cargo; };
+        rust = fenix.packages.${system}.fromToolchainFile {
+          dir = ./.;
+          sha256 = "/nC+LSETp1A78j+uU7TcCHnmLgjEtcIm809GTnNNdYE=";
+        };
+        naersk-lib = naersk.lib.${system}.override {
+          rustc = rust;
+          cargo = rust;
+        };
         pre-commit-hooks-lib = pre-commit-hooks.lib.${system};
         project = import ./. {
           inherit pkgs gitignore naersk-lib rust pre-commit-hooks-lib;
@@ -51,7 +56,7 @@
         };
         devShells.default = pkgs.mkShell {
           buildInputs = builtins.attrValues project.devTools;
-          RUST_SRC_PATH = "${rust.rust-src}/lib/rustlib/src/rust/library";
+          RUST_SRC_PATH = "${rust}/lib/rustlib/src/rust/library";
           shellHook = project.pre-commit-check.shellHook + ''
             export CARGO_HOME=$PWD/.cargo
           '';

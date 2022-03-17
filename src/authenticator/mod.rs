@@ -1,9 +1,13 @@
 mod insecure;
+mod merkle;
 mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
-use crate::{log::PackageId, util::DataSized};
+use crate::{
+    log::PackageId,
+    util::{DataSize, DataSized},
+};
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
@@ -15,6 +19,16 @@ pub struct Revision(pub u64);
 impl From<u64> for Revision {
     fn from(revision: u64) -> Self {
         Self(revision)
+    }
+}
+
+impl DataSized for Revision {
+    fn size(&self) -> DataSize {
+        DataSize::from_bytes(
+            std::mem::size_of::<Self>()
+                .try_into()
+                .expect("not that big"),
+        )
     }
 }
 

@@ -14,7 +14,7 @@ in rec {
   devTools = {
     inherit (pkgs) nixfmt nix-linter git age gnum4;
     inherit (pkgs) libiconv;
-    rust = rust.toolchain;
+    inherit rust;
     pythonEnvAnalysis = ssanalyze.dependencyEnv;
     pythonEnvLogs = sslogs.dependencyEnv;
     pythonPackageData = generate-package-data.dependencyEnv;
@@ -45,7 +45,7 @@ in rec {
              cp --no-preserve=mode -r ${
                builtins.head sssim.builtDependencies
              }/.cargo/ "''${CARGO_HOME}"
-             PATH=${rust.toolchain}/bin:${pkgs.gcc}/bin:$PATH \
+             PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
                cargo clippy --release --features strict --offline -- --no-deps
              rm -rf "''${CARGO_HOME}"
           '
@@ -57,7 +57,7 @@ in rec {
         enable = true;
         entry = ''
           bash -c ' \
-             PATH=${rust.toolchain}/bin:${pkgs.gcc}/bin:$PATH \
+             PATH=${rust}/bin:${pkgs.gcc}/bin:$PATH \
              cargo fmt -- --check --color always
           '
         '';

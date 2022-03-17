@@ -39,7 +39,7 @@ impl From<String> for UserId {
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct PackageId(String);
+pub struct PackageId(pub String);
 
 impl From<PackageId> for String {
     fn from(id: PackageId) -> String {
