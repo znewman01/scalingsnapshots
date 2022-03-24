@@ -12,15 +12,14 @@ in rec {
   src = gitignore.lib.gitignoreSource ./.;
 
   devTools = {
-    inherit (pkgs) nixfmt nix-linter git age gnum4;
-    inherit (pkgs) libiconv;
+    inherit (pkgs) nixfmt nix-linter git age gnum4 rust-analyzer;
     inherit rust;
     pythonEnvAnalysis = ssanalyze.dependencyEnv;
     pythonEnvLogs = sslogs.dependencyEnv;
     pythonPackageData = generate-package-data.dependencyEnv;
     inherit (python.pkgs) poetry black;
     inherit (pkgs.nodePackages) pyright;
-  };
+  } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin { inherit (pkgs) libiconv; };
 
   pre-commit-check = pre-commit-hooks-lib.run {
     inherit src;
