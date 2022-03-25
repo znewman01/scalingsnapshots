@@ -12,10 +12,10 @@ jobs:
       with:
         name: znewman01
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+    - run: nix flake lock --update-input sssim --update-input sslogs --update-input ssanalyze --update-input generate-package-data
     - run: nix develop --command echo Shell works.
     - run: nix flake check
     - run: nix run .#sssim -- --help
     - run: nix run .#sslogs -- --help
     - run: nix run .#ssanalyze -- --help
-    - run: nix build .#e2e-pipeline
     - run: nix run .#generate-package-data -- generate-package-data/testdata
