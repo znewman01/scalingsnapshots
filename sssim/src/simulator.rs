@@ -19,6 +19,7 @@ where
     )
 }
 
+// TODO: split up by action, they all have different resource usages
 #[derive(Debug, Serialize)]
 pub struct ResourceUsage {
     /// Server-side computation time used to handle this request.
@@ -30,7 +31,9 @@ pub struct ResourceUsage {
     #[serde(rename = "bandwidth_bytes", serialize_with = "data_size_as_bytes")]
     bandwidth: DataSize,
     #[serde(rename = "server_storage_bytes", serialize_with = "data_size_as_bytes")]
-    storage: DataSize,
+    server_storage: DataSize,
+    #[serde(rename = "user_storage_bytes", serialize_with = "data_size_as_bytes")]
+    user_storage: DataSize,
 }
 
 /// A simulator for a secure software repository.
@@ -51,7 +54,7 @@ pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
 // TODO: investigate the clones, see if you can get rid of them
 impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
-    S: Default,
+    S: Default + DataSized,
 {
     pub fn new(authenticator: A) -> Self {
         Self {
@@ -81,7 +84,8 @@ where
             server_compute: server_request_time,
             user_compute: user_verify_time,
             bandwidth,
-            storage: self.authenticator.size(),
+            server_storage: self.authenticator.size(),
+            user_storage: user_snapshot.size(),
         }
     }
 
@@ -113,7 +117,8 @@ where
             server_compute,
             user_compute,
             bandwidth: snapshot_size,
-            storage: self.authenticator.size(),
+            server_storage: self.authenticator.size(),
+            user_storage: snapshot.size(),
         }
     }
 
@@ -126,14 +131,21 @@ where
             server_compute: server_upload,
             user_compute: Duration::ZERO,
             bandwidth: DataSize::zero(),
-            storage: self.authenticator.size(),
+            server_storage: self.authenticator.size(),
+            user_storage: DataSize::zero(),
         }
     }
 
     pub fn process(&mut self, action: &mut Action) -> ResourceUsage {
+        // TODO: add a map of package name -> package number
+        // TODO: when a new package comes in, give it a number (the lowest number that hasn't been given out)
         // TODO: batch publish?
         match action {
-            Action::Download { user, package } => self.process_download(user.clone(), package),
+            Action::Download { user, package } => {
+                self.process_publish(package); // TODO: this is bad
+                self.process_refresh_metadata(user.clone());
+                self.process_download(user.clone(), package)
+            }
             Action::RefreshMetadata { user } => self.process_refresh_metadata(user.clone()),
             Action::Publish { package } => self.process_publish(package),
         }

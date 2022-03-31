@@ -10,6 +10,7 @@ use sssim::authenticator::ClientSnapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
 use sssim::{authenticator, Authenticator};
+use sssim::util::DataSized;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -23,7 +24,7 @@ struct Event {
 
 fn run<S, A>(authenticator: A)
 where
-    S: ClientSnapshot + Default + Debug,
+    S: ClientSnapshot + Default + Debug + DataSized,
     A: Authenticator<S> + Debug,
 {
     let mut simulator = Simulator::new(authenticator);
