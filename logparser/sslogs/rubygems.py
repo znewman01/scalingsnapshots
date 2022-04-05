@@ -8,6 +8,7 @@ from typing import Any
 
 import sslogs.args
 
+
 def main(args: argparse.Namespace):
     output: io.TextIOBase = args.output
     file: io.TextIOBase = args.input
@@ -23,7 +24,10 @@ def main(args: argparse.Namespace):
         download = sslogs.logs.LogEntry(
             timestamp=row["timestamp"],
             action=sslogs.logs.Download(
-                user=user, package=sslogs.logs.Package(id=row["downloaded_gem_name"], length=row["resp_body_size"])
+                user=user,
+                package=sslogs.logs.Package(
+                    id=row["downloaded_gem_name"], length=row["resp_body_size"]
+                ),
             ),
         )
         output.write(json.dumps(refresh.to_dict()) + "\n")
