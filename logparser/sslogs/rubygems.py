@@ -1,6 +1,10 @@
 """RubyGems log parser.
 
 RubyGems data can be downloaded raw from https://ui.honeycomb.io/ruby-together/datasets/rubygems.org/result/HPagwuSXsGZ?tab=raw
+If the above link expires, it can be generated from the following parameters to the for     m at https://ui.honeycomb.io/ruby-together/datasets/rubygems.org:
+     * WHERE url contains .gem AND url does-not-contain gemspec
+     * GROUP BY downloaded_gem_name
+     * ensure the query runs against rubygems.org
 """
 import argparse
 
@@ -17,8 +21,9 @@ def main(args: argparse.Namespace):
 
     for row in contents:
         user = row["client_ip_hash"]
+        ts = datetime.datetime.strptime(row["timestamp"], '%Y-%m-%dT%H:%M:%SZ')
         refresh = sslogs.logs.LogEntry(
-            timestamp=row["timestamp"], action=sslogs.logs.RefreshMetadata(user=user)
+            timestamp=ts, action=sslogs.logs.RefreshMetadata(user=user)
         )
         # TODO: refresh metadata better
         download = sslogs.logs.LogEntry(
