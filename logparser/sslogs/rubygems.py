@@ -21,7 +21,7 @@ def main(args: argparse.Namespace):
 
     for row in contents:
         user = row["client_ip_hash"]
-        ts = datetime.datetime.strptime(row["timestamp"], '%Y-%m-%dT%H:%M:%SZ')
+        ts = datetime.datetime.strptime(row["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
         refresh = sslogs.logs.LogEntry(
             timestamp=ts, action=sslogs.logs.RefreshMetadata(user=user)
         )
