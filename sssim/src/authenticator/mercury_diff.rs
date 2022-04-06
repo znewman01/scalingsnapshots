@@ -57,8 +57,7 @@ impl ClientSnapshot for Snapshot {
         for (package_id, metadata) in diff.packages.iter() {
             if let Some(mut old_metadata) = self.packages.get_mut(&package_id) {
                 old_metadata.revision.0 = metadata.revision.0;
-            }
-            else {
+            } else {
                 self.packages.insert(package_id.clone(), metadata.clone());
             }
         }
@@ -102,7 +101,7 @@ impl ClientSnapshot for Snapshot {
 #[derive(Default, Debug)]
 pub struct Authenticator {
     snapshots: HashMap<u64, Snapshot>,
-    snapshot: Snapshot
+    snapshot: Snapshot,
 }
 
 #[allow(unused_variables)]
@@ -117,13 +116,15 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             return None;
         }
         let prev_snapshot = &self.snapshots[&snapshot_id];
-        let mut diff = Snapshot{id:self.snapshot.id(), packages:HashMap::new()};
+        let mut diff = Snapshot {
+            id: self.snapshot.id(),
+            packages: HashMap::new(),
+        };
         for (package_id, metadata) in self.snapshot.packages.iter() {
             if prev_snapshot.packages[package_id].revision != metadata.revision {
                 if let Some(mut diff_metadata) = diff.packages.get_mut(&package_id) {
                     diff_metadata.revision.0 = metadata.revision.0;
-                }
-                else {
+                } else {
                     diff.packages.insert(package_id.clone(), metadata.clone());
                 }
             }
@@ -133,7 +134,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     }
 
     fn publish(&mut self, package: &PackageId) -> () {
-        self.snapshots.insert(self.snapshot.id.clone(), self.snapshot.clone());
+        self.snapshots
+            .insert(self.snapshot.id.clone(), self.snapshot.clone());
         let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());

@@ -1,7 +1,7 @@
 mod insecure;
+mod mercury_diff;
 mod merkle;
 mod vanilla_tuf;
-mod mercury_diff;
 pub use insecure::Authenticator as Insecure;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
