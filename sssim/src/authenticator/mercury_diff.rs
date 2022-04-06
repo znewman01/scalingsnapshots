@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Metadata {
     revision: Revision,
 }
@@ -55,7 +55,12 @@ impl ClientSnapshot for Snapshot {
     // only update changed packages
     fn update(&mut self, diff: Self::Diff) {
         for (package_id, metadata) in diff.packages.iter() {
-            self.packages[package_id] = *metadata;
+            if let Some(mut old_metadata) = self.packages.get_mut(&package_id) {
+                old_metadata.revision.0 = metadata.revision.0;
+            }
+            else {
+                self.packages.insert(package_id.clone(), metadata.clone());
+            }
         }
         self.id = diff.id
     }
@@ -96,7 +101,8 @@ impl ClientSnapshot for Snapshot {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Debug)]
 pub struct Authenticator {
-    snapshot: Snapshot,
+    snapshots: HashMap<u64, Snapshot>,
+    snapshot: Snapshot
 }
 
 #[allow(unused_variables)]
@@ -104,16 +110,22 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     // find the packages that have changed
     fn refresh_metadata(
         &self,
-        snapshot: Snapshot
+        snapshot_id: <Snapshot as ClientSnapshot>::Id,
     ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        if snapshot.id() == self.snapshot.id() {
+        if snapshot_id == self.snapshot.id() {
             // already up to date
             return None;
         }
-        let diff = Snapshot{id:self.snapshot.id(), packages:HashMap::new()};
+        let prev_snapshot = &self.snapshots[&snapshot_id];
+        let mut diff = Snapshot{id:self.snapshot.id(), packages:HashMap::new()};
         for (package_id, metadata) in self.snapshot.packages.iter() {
-            if snapshot.packages[package_id].revision != metadata.revision {
-                diff.packages[package_id] = *metadata;
+            if prev_snapshot.packages[package_id].revision != metadata.revision {
+                if let Some(mut diff_metadata) = diff.packages.get_mut(&package_id) {
+                    diff_metadata.revision.0 = metadata.revision.0;
+                }
+                else {
+                    diff.packages.insert(package_id.clone(), metadata.clone());
+                }
             }
         }
 
@@ -121,6 +133,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     }
 
     fn publish(&mut self, package: &PackageId) -> () {
+        self.snapshots.insert(self.snapshot.id.clone(), self.snapshot.clone());
+        let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());
         let mut metadata = entry.or_insert_with(Metadata::default);
