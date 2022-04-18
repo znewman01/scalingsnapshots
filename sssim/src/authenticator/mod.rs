@@ -34,6 +34,7 @@ impl DataSized for Revision {
     }
 }
 
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash(pub [u64; 4]);
 
