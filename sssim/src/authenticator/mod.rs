@@ -1,5 +1,6 @@
 mod insecure;
 mod mercury_diff;
+mod mercury_hash;
 mod merkle;
 mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
@@ -24,6 +25,20 @@ impl From<u64> for Revision {
 }
 
 impl DataSized for Revision {
+    fn size(&self) -> DataSize {
+        DataSize::from_bytes(
+            std::mem::size_of::<Self>()
+                .try_into()
+                .expect("not that big"),
+        )
+    }
+}
+
+#[cfg_attr(test, derive(Arbitrary))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Hash(pub [u64; 4]);
+
+impl DataSized for Hash {
     fn size(&self) -> DataSize {
         DataSize::from_bytes(
             std::mem::size_of::<Self>()
