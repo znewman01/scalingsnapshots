@@ -18,7 +18,7 @@ pub struct Metadata {
 
 impl DataSized for Metadata {
     fn size(&self) -> DataSize {
-        DataSize::from_bytes(std::mem::size_of::<Self>().try_into().unwrap())
+        DataSize::from_bytes(self.revision.size().bytes() + self.hash.size().bytes())
     }
 }
 
