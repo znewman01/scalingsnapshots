@@ -4,8 +4,8 @@ mod mercury_hash;
 mod merkle;
 mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
+use serde::Serialize;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
-use serde::{Serialize};
 
 use crate::{
     log::PackageId,
