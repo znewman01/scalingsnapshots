@@ -5,6 +5,7 @@ mod merkle;
 mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
+use serde::{Serialize};
 
 use crate::{
     log::PackageId,
@@ -15,7 +16,7 @@ use crate::{
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Revision(pub u64);
 
 impl From<u64> for Revision {

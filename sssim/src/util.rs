@@ -17,7 +17,7 @@ impl DataSize {
     /// Get the data size's bytes.
     pub fn bytes(&self) -> u64 {
         self.bytes
-    }
+   }
 }
 
 pub fn data_size_as_bytes<S>(data_size: &DataSize, s: S) -> Result<S::Ok, S::Error>
@@ -43,5 +43,11 @@ impl<T: DataSized> DataSized for Option<T> {
             None => DataSize::zero(),
             Some(inner) => inner.size(),
         }
+    }
+}
+
+impl DataSized for rug::Integer {
+    fn size(&self) -> DataSize {
+        DataSize::from_bytes(self.significant_digits::<u8>().try_into().unwrap())
     }
 }

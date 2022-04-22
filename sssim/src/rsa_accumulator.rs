@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
-use rug::integer::IsPrime;
 use rug::Integer;
 use std::collections::HashSet;
+use crate::util::{DataSized, DataSize};
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
 lazy_static! {
@@ -37,6 +37,11 @@ impl From<Integer> for RsaAccumulatorDigest {
         RsaAccumulatorDigest { value }
     }
 }
+impl DataSized for RsaAccumulatorDigest {
+    fn size(&self) -> DataSize {
+        self.value.size()
+    }
+}
 impl RsaAccumulatorDigest {
     pub fn verify(&self, member: &Integer, witness: Integer) -> bool {
         witness
@@ -57,12 +62,24 @@ impl RsaAccumulatorDigest {
         let temp2 = B.pow_mod(value, &MODULUS).expect("Non negative value");
         return (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone();
     }
+
+    pub fn verify_append_only(&self, proof: Integer, new_state:Self) -> bool {
+        let expected = self.value.clone().pow_mod(&proof, &MODULUS).expect("non-negative");
+        expected == new_state.value
+    }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     set: HashSet<Integer>,
+}
+impl DataSized for RsaAccumulator {
+    fn size(&self) -> DataSize {
+        let set_size= self.set.len().checked_mul(MODULUS.size().bytes().try_into().unwrap());
+        let set_size_bytes: u64 = set_size.expect("no overflow").try_into().unwrap();
+        DataSize::from_bytes(self.digest.size().bytes() + set_size_bytes)
+    }
 }
 impl RsaAccumulator {
     pub fn digest(&self) -> &RsaAccumulatorDigest {
@@ -71,15 +88,16 @@ impl RsaAccumulator {
 
     pub fn add(&mut self, member: Integer) {
         assert!(member >= 0);
-        let is_prime = member.is_probably_prime(30);
-        if is_prime == IsPrime::No {
-            panic!("member must be prime");
-        }
         self.digest
             .value
             .pow_mod_mut(&member, &MODULUS)
             .expect("member should be >=0");
         self.set.insert(member);
+    }
+
+    pub fn remove(&mut self, member: Integer) {
+        self.digest = RsaAccumulatorDigest{ value: self.prove(&member).unwrap()};
+        self.set.remove(&member);
     }
 
     pub fn new(members: Vec<Integer>) -> Self {
@@ -88,6 +106,16 @@ impl RsaAccumulator {
             acc.add(m);
         }
         return acc;
+    }
+
+    pub fn prove_append_only(&self, other: Self) -> Integer {
+        assert!(self.set.is_superset(&other.set));
+        let mut prod: Integer = Integer::from(1);
+        //TODO not this
+        for elem in self.set.difference(&other.set) {
+            prod *= elem;
+        }
+        prod
     }
 
     //TODO compute all proofs?
