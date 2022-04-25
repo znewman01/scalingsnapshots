@@ -17,7 +17,7 @@ impl DataSize {
     /// Get the data size's bytes.
     pub fn bytes(&self) -> u64 {
         self.bytes
-   }
+    }
 }
 
 pub fn data_size_as_bytes<S>(data_size: &DataSize, s: S) -> Result<S::Ok, S::Error>
