@@ -1,3 +1,4 @@
+//TODO: add hash
 use smtree::index::TreeIndex;
 use smtree::node_template::HashNodeSmt;
 use smtree::pad_secret::ALL_ZEROS_SECRET;

@@ -89,8 +89,7 @@ where
     }
 }
 
-/// Hash the value of data to a prime number less than modulus.
-pub fn hash_to_prime(data: &[u8], modulus: &rug::Integer) -> Result<rug::Integer, MyError> {
+pub fn division_intractable_hash(data: &[u8], modulus: &rug::Integer) -> rug::Integer {
     // We want a random number with a number of bits just greater than modulus
     // has. significant_digits gives us the right number of bytes.
     let digits: usize = modulus.significant_digits::<u8>();
@@ -98,17 +97,8 @@ pub fn hash_to_prime(data: &[u8], modulus: &rug::Integer) -> Result<rug::Integer
 
     let mut foo = RandMod::new(|| bar.hash(), modulus);
 
-    // TODO: calculate how many times we should actually do this.
-    // It appears to be between 10,000 and 100,000.
-    for _ in 0..10000 {
-        let candidate = foo.rand_mod();
-        if candidate.is_probably_prime(MILLER_RABIN_ITERS) == rug::integer::IsPrime::No {
-            continue;
-        }
-        // If we made it here, our candidate rocks.
-        return Ok(candidate);
-    }
-    Err(MyError)
+    let candidate = foo.rand_mod();
+    candidate
 }
 
 #[cfg(test)]
@@ -122,11 +112,10 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_hash_to_prime(data: Vec<u8>, modulus in integers()) {
+        fn test_division_intractable_hash(data: Vec<u8>, modulus in integers()) {
             prop_assume!(modulus > 128);
-            let result = hash_to_prime(&data, &modulus)?;
+            let result = division_intractable_hash(&data, &modulus)?;
             prop_assert!(result < modulus);
-            prop_assert!(result.is_probably_prime(30) != rug::integer::IsPrime::No);
         }
     }
 }

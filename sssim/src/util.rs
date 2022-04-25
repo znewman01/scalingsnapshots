@@ -45,3 +45,9 @@ impl<T: DataSized> DataSized for Option<T> {
         }
     }
 }
+
+impl DataSized for rug::Integer {
+    fn size(&self) -> DataSize {
+        DataSize::from_bytes(self.significant_digits::<u8>().try_into().unwrap())
+    }
+}
