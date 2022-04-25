@@ -1,6 +1,7 @@
 mod insecure;
 mod mercury_diff;
 mod mercury_hash;
+mod mercury_hash_diff;
 mod merkle;
 mod vanilla_tuf;
 pub use insecure::Authenticator as Insecure;
