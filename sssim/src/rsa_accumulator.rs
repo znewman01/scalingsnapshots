@@ -204,14 +204,6 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn test_rsa_accumulator_add() {
-        let mut acc = RsaAccumulator::default();
-
-        acc.add(4.into());
-    }
-
-    #[test]
     fn test_rsa_accumulator_nonmember() {
         let mut acc = RsaAccumulator::default();
         let witness = acc.prove_nonmember(5.into()).unwrap();

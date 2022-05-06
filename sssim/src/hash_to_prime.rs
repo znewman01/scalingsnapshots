@@ -114,7 +114,7 @@ mod tests {
         #[test]
         fn test_division_intractable_hash(data: Vec<u8>, modulus in integers()) {
             prop_assume!(modulus > 128);
-            let result = division_intractable_hash(&data, &modulus)?;
+            let result = division_intractable_hash(&data, &modulus);
             prop_assert!(result < modulus);
         }
     }
