@@ -1,3 +1,4 @@
+mod gpg;
 mod insecure;
 mod mercury_diff;
 mod mercury_hash;
