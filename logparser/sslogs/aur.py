@@ -10,15 +10,14 @@ TODO (hopefully)
 """
 from __future__ import annotations
 
-import gzip
 import datetime
-import itertools
 import json
 
 from operator import attrgetter
-from typing import Iterable
+from typing import Iterable, Any, Dict
 
-from sslogs.logs import FilePath, LogEntry, Publish, File, PackageRelease
+
+from sslogs.logs import LogEntry, Publish, Package
 
 
 def json_to_log_entry(entry) -> LogEntry:
@@ -26,28 +25,15 @@ def json_to_log_entry(entry) -> LogEntry:
     # TODO length is not included in this metadata
     return LogEntry(
         timestamp=mtime,
-        action=Publish(
-            package=entry["Name"],
-            release=PackageRelease(
-                version=entry["Version"],
-                files=[File(name=entry["Name"], length=0)],
-            ),
-        ),
+        action=Publish(package=Package(id=entry["Name"], length=0)),
     )
 
 
-# def _tar_info_to_triplet(info: tarfile.TarInfo) -> Tuple[Tuple[package,]
-def process(archive: Iterable[file], curtime: int):
+def process(archive: Iterable[Dict[str, Any]], min_update_time: int):
     # only consider files added since the file was updated
     # curtime is the beginning of the current range
-    # archive_filtered = [f for f in map(json.load, archive) if f["LastModified"] > curtime]
-    archive_filtered = (
-        l for l in archive if l["LastModified"] > curtime
-    )
-    return [
-        json_to_log_entry(j)
-        for j in archive_filtered
-    ]
+    archive_filtered = (l for l in archive if l["LastModified"] > min_update_time)
+    return [json_to_log_entry(j) for j in archive_filtered]
 
 
 def main():
@@ -55,6 +41,7 @@ def main():
     contents = json.load(archive)
     log = process(contents, 1436303556)
     log.sort(key=attrgetter("timestamp"))
+
 
 if __name__ == "__main__":
     main()
