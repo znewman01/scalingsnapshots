@@ -807,6 +807,7 @@ dependencies = [
  "az",
  "gmp-mpfr-sys",
  "libc",
+ "serde",
 ]
 
 [[package]]

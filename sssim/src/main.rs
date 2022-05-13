@@ -24,6 +24,7 @@ struct Event {
 fn run<S, A>(authenticator: A)
 where
     S: ClientSnapshot + Default + Debug,
+    <S as ClientSnapshot>::Diff: Serialize,
     A: Authenticator<S> + Debug,
 {
     let mut simulator = Simulator::new(authenticator);

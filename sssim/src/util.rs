@@ -20,6 +20,12 @@ impl DataSize {
     }
 }
 
+impl From<usize> for DataSize {
+    fn from(value: usize) -> Self {
+        DataSize::from_bytes(value.try_into().unwrap())
+    }
+}
+
 pub fn data_size_as_bytes<S>(data_size: &DataSize, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -31,23 +37,11 @@ pub trait DataSized {
     fn size(&self) -> DataSize;
 }
 
-impl DataSized for () {
+impl<T: Serialize> DataSized for T {
     fn size(&self) -> DataSize {
-        DataSize::zero()
-    }
-}
-
-impl<T: DataSized> DataSized for Option<T> {
-    fn size(&self) -> DataSize {
-        match self {
-            None => DataSize::zero(),
-            Some(inner) => inner.size(),
-        }
-    }
-}
-
-impl DataSized for rug::Integer {
-    fn size(&self) -> DataSize {
-        DataSize::from_bytes(self.significant_digits::<u8>().try_into().unwrap())
+        serde_json::to_string(self)
+            .expect("serialization should work")
+            .len()
+            .into()
     }
 }

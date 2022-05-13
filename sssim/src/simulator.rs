@@ -52,6 +52,7 @@ pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
 impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
+    S::Diff: Serialize,
 {
     pub fn new(authenticator: A) -> Self {
         Self {

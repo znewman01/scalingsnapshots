@@ -16,9 +16,6 @@ use time::OffsetDateTime;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::util::DataSize;
-use crate::util::DataSized;
-
 format_description!(
     simple_dt_8601,
     OffsetDateTime,
@@ -50,17 +47,6 @@ impl From<PackageId> for String {
 impl From<String> for PackageId {
     fn from(id: String) -> Self {
         PackageId(id)
-    }
-}
-
-impl DataSized for PackageId {
-    fn size(&self) -> DataSize {
-        DataSize::from_bytes(
-            self.0
-                .len()
-                .try_into()
-                .expect("Hopefully this file name is not >2^64 characters"),
-        )
     }
 }
 
