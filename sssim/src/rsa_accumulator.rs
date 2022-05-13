@@ -1,7 +1,8 @@
+use crate::multiset::MultiSet;
 use lazy_static::lazy_static;
-use rug::Integer;
+use rug::{ops::Pow, Integer};
 use serde::Serialize;
-use std::collections::HashSet;
+
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
 lazy_static! {
@@ -25,6 +26,7 @@ lazy_static! {
 pub struct RsaAccumulatorDigest {
     value: Integer,
 }
+
 impl Default for RsaAccumulatorDigest {
     fn default() -> Self {
         RsaAccumulatorDigest {
@@ -37,18 +39,37 @@ impl From<Integer> for RsaAccumulatorDigest {
         RsaAccumulatorDigest { value }
     }
 }
+
+type MembershipWitness = Integer;
+type NonMembershipWitness = (Integer, Integer);
+pub type Witness = (MembershipWitness, NonMembershipWitness);
+
 impl RsaAccumulatorDigest {
     #[must_use]
-    pub fn verify(&self, member: &Integer, witness: Integer) -> bool {
+    pub fn verify(&self, member: &Integer, revision: u32, witness: Witness) -> bool {
+        // member@revision is valid IF member@revision is in the set and
+        // member@(revision+1) is not.
+        self.verify_member(member, revision, witness.0)
+            && self.verify_nonmember(member, revision + 1, witness.1)
+    }
+
+    #[must_use]
+    fn verify_member(&self, member: &Integer, revision: u32, witness: Integer) -> bool {
+        let exponent = member.pow(&revision.into());
         witness
-            .pow_mod(member, &MODULUS)
+            .pow_mod(&exponent.into(), &MODULUS)
             .expect("Non negative member")
             == self.value
     }
 
     #[allow(non_snake_case)]
     #[must_use]
-    pub fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
+    fn verify_nonmember(
+        &self,
+        member: &Integer,
+        revision: u32,
+        witness: NonMembershipWitness,
+    ) -> bool {
         //TODO clean up clones
         let (a, B) = witness;
         let temp1 = self
@@ -56,7 +77,10 @@ impl RsaAccumulatorDigest {
             .clone()
             .pow_mod(&a, &MODULUS)
             .expect("Non negative witness");
-        let temp2 = B.pow_mod(value, &MODULUS).expect("Non negative value");
+        let exponent = member.pow(&revision.into());
+        let temp2 = B
+            .pow_mod(&exponent.into(), &MODULUS)
+            .expect("Non negative value");
         (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone()
     }
 
@@ -74,7 +98,7 @@ impl RsaAccumulatorDigest {
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
-    set: HashSet<Integer>,
+    multiset: MultiSet<Integer>,
 }
 
 impl RsaAccumulator {
@@ -83,71 +107,69 @@ impl RsaAccumulator {
         &self.digest
     }
 
-    pub fn add(&mut self, member: Integer) {
+    pub fn increment(&mut self, member: Integer) {
         assert!(member >= 0);
         self.digest
             .value
             .pow_mod_mut(&member, &MODULUS)
             .expect("member should be >=0");
-        self.set.insert(member);
-    }
-
-    pub fn remove(&mut self, member: &Integer) {
-        self.digest = RsaAccumulatorDigest {
-            value: self.prove(member).unwrap(),
-        };
-        self.set.remove(member);
-    }
-
-    #[must_use]
-    pub fn new(members: Vec<Integer>) -> Self {
-        let mut acc = Self::default();
-        for m in members {
-            acc.add(m);
-        }
-        acc
+        self.multiset.insert(member);
     }
 
     #[must_use]
     pub fn prove_append_only(&self, other: &Self) -> Integer {
-        assert!(self.set.is_superset(&other.set));
-        let mut prod: Integer = Integer::from(1);
+        assert!(self.multiset.is_superset(&other.multiset));
+        let mut prod: Integer = 1.into();
         //TODO not this
-        for elem in self.set.difference(&other.set) {
-            prod *= elem;
+        for (elem, count) in self.multiset.difference(&other.multiset) {
+            prod *= Integer::from(elem.pow(count));
         }
         prod
     }
 
+    pub fn prove(&self, member: &Integer, revision: u32) -> Option<Witness> {
+        self.prove_member(member, revision).and_then(|mem_pf| {
+            self.prove_nonmember(member, revision)
+                .map(|nonmem_pf| (mem_pf, nonmem_pf))
+        })
+    }
+
+    pub fn get(&self, member: &Integer) -> u32 {
+        self.multiset.get(member)
+    }
+
     //TODO compute all proofs?
     #[must_use]
-    pub fn prove(&self, member: &Integer) -> Option<Integer> {
+    fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
         assert!(member >= &0);
-        if !self.set.contains(member) {
+        let count = self.multiset.get(member);
+        if count < revision {
             return None;
         }
         let mut current = GENERATOR.clone();
-        for s in &self.set {
+        for (s, count) in self.multiset.iter() {
             if s != member {
-                current.pow_mod_mut(s, &MODULUS).expect("member > 0");
+                let exp = Integer::from(s.pow(count));
+                current.pow_mod_mut(&exp, &MODULUS).expect("member > 0");
             }
         }
         Some(current)
     }
 
     #[must_use]
-    pub fn prove_nonmember(&self, value: Integer) -> Option<(Integer, Integer)> {
-        if self.set.contains(&value) {
+    fn prove_nonmember(&self, value: &Integer, revision: u32) -> Option<NonMembershipWitness> {
+        let count = self.multiset.get(&value);
+        if count >= revision {
             return None;
         }
 
         let mut exp = Integer::from(1);
         //TODO not this
-        for s in &self.set {
-            exp *= s;
+        for (s, count) in self.multiset.iter() {
+            exp *= Integer::from(s.pow(count));
         }
 
-        let (g, s, t) = exp.gcd_cofactors(value, Integer::new());
+        let (g, s, t) = exp.gcd_cofactors(value.pow(revision).into(), Integer::new());
 
         if g != 1 {
             return None;
