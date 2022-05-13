@@ -8,10 +8,7 @@ pub use insecure::Authenticator as Insecure;
 use serde::Serialize;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
-use crate::{
-    log::PackageId,
-    util::{DataSize, DataSized},
-};
+use crate::{log::PackageId, util::DataSized};
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
@@ -27,18 +24,8 @@ impl From<u64> for Revision {
 }
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Hash(pub [u64; 4]);
-
-impl DataSized for Hash {
-    fn size(&self) -> DataSize {
-        DataSize::from_bytes(
-            std::mem::size_of::<Self>()
-                .try_into()
-                .expect("not that big"),
-        )
-    }
-}
 
 // Client-side state
 pub trait ClientSnapshot {

@@ -1,4 +1,5 @@
 use authenticator::ClientSnapshot;
+use serde::Serialize;
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
@@ -6,7 +7,6 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 use crate::{
     authenticator::{self, Revision},
     log::PackageId,
-    util::{DataSize, DataSized},
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
@@ -35,7 +35,7 @@ impl ClientSnapshot for Snapshot {
 ///
 /// Useful for testing.
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize)]
 pub struct Authenticator {}
 
 #[allow(unused_variables)]
@@ -55,12 +55,6 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         file: &PackageId,
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
         (Revision::from(0), ())
-    }
-}
-
-impl DataSized for Authenticator {
-    fn size(&self) -> DataSize {
-        DataSize::zero()
     }
 }
 

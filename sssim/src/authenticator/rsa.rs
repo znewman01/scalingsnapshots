@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use crate::rsa_accumulator::RsaAccumulatorDigest;
 use bincode::Encode;
+use std::collections::HashMap;
 
-use authenticator::{ClientSnapshot, Revision, Hash};
+use authenticator::{ClientSnapshot, Hash, Revision};
 
 use crate::{
     authenticator,
@@ -10,10 +10,9 @@ use crate::{
     util::{DataSize, DataSized},
 };
 
-
 #[derive(Default, Clone, Debug)]
 pub struct Snapshot {
-    rsa_state: RsaAccumulatorDigest
+    rsa_state: RsaAccumulatorDigest,
 }
 
 impl Snapshot {
@@ -28,14 +27,8 @@ impl DataSized for Snapshot {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Proof(Hash, Integer);
-
-impl DataSized for Proof {
-    fn size(&self) -> DataSize {
-        DataSized::from_bytes(self.0.size().to_bytes() + self.1.size().to_bytes())
-    }
-}
 
 impl ClientSnapshot for Snapshot {
     type Id = RsaAccumulatorDigest;
@@ -86,7 +79,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         if snapshot_id == self.rsa_acc.digest() {
             return None;
         }
-        return Some(self.rsa_acc.digest())
+        return Some(self.rsa_acc.digest());
     }
 
     fn publish(&mut self, package: &PackageId) -> () {
