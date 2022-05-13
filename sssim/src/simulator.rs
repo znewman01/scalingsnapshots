@@ -75,7 +75,7 @@ where
         });
         let bandwidth = proof.size();
         let (user_verify_time, _) = Duration::time_fn(|| {
-            assert!(user_snapshot.verify_membership(&package.id, revision, proof))
+            assert!(user_snapshot.verify_membership(&package.id, revision, proof));
         });
 
         ResourceUsage {

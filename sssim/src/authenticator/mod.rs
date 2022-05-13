@@ -58,7 +58,7 @@ pub trait ClientSnapshot {
 pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
 
-    fn publish(&mut self, package: &PackageId) -> ();
+    fn publish(&mut self, package: &PackageId);
 
     fn request_file(&self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
 }
@@ -72,7 +72,7 @@ pub(in crate) mod tests {
     // 2. publish
     // 3. refresh_metadata
     // 4. check_no_rollback
-    pub fn update<S, A>(mut client_state: S, server_state: A) -> Result<(), TestCaseError>
+    pub fn update<S, A>(mut client_state: S, server_state: &A) -> Result<(), TestCaseError>
     where
         S: ClientSnapshot,
         A: Authenticator<S>,

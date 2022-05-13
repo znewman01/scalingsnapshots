@@ -73,10 +73,12 @@ pub struct Entry {
 }
 
 impl Entry {
+    #[must_use]
     pub fn new(timestamp: OffsetDateTime, action: Action) -> Self {
         Self { timestamp, action }
     }
 
+    #[must_use]
     pub fn action(&self) -> &Action {
         &self.action
     }
@@ -91,9 +93,7 @@ impl From<Vec<Entry>> for Log {
         let mut last: Option<OffsetDateTime> = None;
         for entry in &entries {
             if let Some(last) = last {
-                if entry.timestamp < last {
-                    panic!("Invalid log!");
-                }
+                assert!(entry.timestamp >= last, "Invalid log!");
             }
             last = Some(entry.timestamp);
         }

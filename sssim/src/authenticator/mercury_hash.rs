@@ -34,7 +34,7 @@ impl DataSized for Snapshot {
         // TODO: better to serialize then figure out the size?
         // also gzip?
         let mut size: u64 = TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (package_id, metadata) in self.packages.iter() {
+        for (package_id, metadata) in &self.packages {
             size += package_id.size().bytes();
             size += metadata.size().bytes();
         }
@@ -54,18 +54,18 @@ impl ClientSnapshot for Snapshot {
 
     fn update(&mut self, diff: Self::Diff) {
         self.packages = diff.packages;
-        self.id = diff.id
+        self.id = diff.id;
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in self.packages.iter() {
-            let new_metadata = match diff.packages.get(&package_id) {
+        for (package_id, metadata) in &self.packages {
+            let new_metadata = match diff.packages.get(package_id) {
                 None => {
                     return false;
                 }
                 Some(m) => m,
             };
-            if !(new_metadata.revision >= metadata.revision) {
+            if new_metadata.revision < metadata.revision {
                 return false;
             }
         }
@@ -79,12 +79,8 @@ impl ClientSnapshot for Snapshot {
         revision: Revision,
         _: Self::Proof,
     ) -> bool {
-        if let Some(metadata) = self.packages.get(&package_id) {
-            if metadata.revision != revision {
-                false
-            } else {
-                true
-            }
+        if let Some(metadata) = self.packages.get(package_id) {
+            metadata.revision == revision
         } else {
             false
         }
@@ -111,7 +107,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(self.snapshot.clone())
     }
 
-    fn publish(&mut self, package: &PackageId) -> () {
+    fn publish(&mut self, package: &PackageId) {
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());
         let mut metadata = entry.or_insert_with(Metadata::default);
@@ -147,7 +143,7 @@ mod tests {
         #[ignore] // TODO: fix tests::update
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
-            tests::update(snapshot, authenticator)?;
+            tests::update(snapshot, &authenticator)?;
         }
     }
 }

@@ -112,7 +112,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(Snapshot::new(my_root))
     }
 
-    fn publish(&mut self, package: &PackageId) -> () {
+    fn publish(&mut self, package: &PackageId) {
         let entry = self.revisions.entry(package.clone());
         let mut revision = entry.or_insert_with(Revision::default);
         revision.0 += 1;
@@ -145,7 +145,7 @@ impl DataSized for Authenticator {
         // also gzip?
         let mut snapshot_size: u64 =
             TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (package_id, revision) in self.revisions.iter() {
+        for (package_id, revision) in &self.revisions {
             snapshot_size += package_id.size().bytes();
             snapshot_size += revision.size().bytes();
         }

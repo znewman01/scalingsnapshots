@@ -47,7 +47,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         None
     }
 
-    fn publish(&mut self, release: &PackageId) -> () {}
+    fn publish(&mut self, release: &PackageId) {}
 
     fn request_file(
         &self,
@@ -66,7 +66,7 @@ mod tests {
     proptest! {
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
-            tests::update(snapshot, authenticator)?;
+            tests::update(snapshot, &authenticator)?;
         }
     }
 }

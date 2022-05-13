@@ -6,15 +6,18 @@ pub struct DataSize {
 }
 
 impl DataSize {
+    #[must_use]
     pub fn from_bytes(bytes: u64) -> Self {
         DataSize { bytes }
     }
 
+    #[must_use]
     pub fn zero() -> Self {
         Self::default()
     }
 
     /// Get the data size's bytes.
+    #[must_use]
     pub fn bytes(&self) -> u64 {
         self.bytes
     }

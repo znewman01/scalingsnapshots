@@ -34,7 +34,7 @@ impl DataSized for Snapshot {
         // TODO: better to serialize then figure out the size?
         // also gzip?
         let mut size: u64 = TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (package_id, metadata) in self.packages.iter() {
+        for (package_id, metadata) in &self.packages {
             // TODO: only add if new since last update
             size += package_id.size().bytes();
             size += metadata.size().bytes();
@@ -55,25 +55,25 @@ impl ClientSnapshot for Snapshot {
 
     // only update changed packages
     fn update(&mut self, diff: Self::Diff) {
-        for (package_id, metadata) in diff.packages.iter() {
-            if let Some(mut old_metadata) = self.packages.get_mut(&package_id) {
+        for (package_id, metadata) in &diff.packages {
+            if let Some(mut old_metadata) = self.packages.get_mut(package_id) {
                 old_metadata.revision.0 = metadata.revision.0;
             } else {
-                self.packages.insert(package_id.clone(), metadata.clone());
+                self.packages.insert(package_id.clone(), *metadata);
             }
         }
-        self.id = diff.id
+        self.id = diff.id;
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in self.packages.iter() {
-            let new_metadata = match diff.packages.get(&package_id) {
+        for (package_id, metadata) in &self.packages {
+            let new_metadata = match diff.packages.get(package_id) {
                 None => {
                     return false;
                 }
                 Some(m) => m,
             };
-            if !(new_metadata.revision >= metadata.revision) {
+            if new_metadata.revision < metadata.revision {
                 return false;
             }
         }
@@ -87,12 +87,8 @@ impl ClientSnapshot for Snapshot {
         revision: Revision,
         _: Self::Proof,
     ) -> bool {
-        if let Some(metadata) = self.packages.get(&package_id) {
-            if metadata.revision != revision {
-                false
-            } else {
-                true
-            }
+        if let Some(metadata) = self.packages.get(package_id) {
+            metadata.revision == revision
         } else {
             false
         }
@@ -122,12 +118,12 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             id: self.snapshot.id(),
             packages: HashMap::new(),
         };
-        for (package_id, metadata) in self.snapshot.packages.iter() {
+        for (package_id, metadata) in &self.snapshot.packages {
             if prev_snapshot.packages[package_id].revision != metadata.revision {
-                if let Some(mut diff_metadata) = diff.packages.get_mut(&package_id) {
+                if let Some(mut diff_metadata) = diff.packages.get_mut(package_id) {
                     diff_metadata.revision.0 = metadata.revision.0;
                 } else {
-                    diff.packages.insert(package_id.clone(), metadata.clone());
+                    diff.packages.insert(package_id.clone(), *metadata);
                 }
             }
         }
@@ -135,9 +131,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(diff)
     }
 
-    fn publish(&mut self, package: &PackageId) -> () {
+    fn publish(&mut self, package: &PackageId) {
         self.snapshots
-            .insert(self.snapshot.id.clone(), self.snapshot.clone());
+            .insert(self.snapshot.id, self.snapshot.clone());
         let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());
@@ -174,7 +170,7 @@ mod tests {
         #[ignore] // TODO: fix tests::update
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
-            tests::update(snapshot, authenticator)?;
+            tests::update(snapshot, &authenticator)?;
         }
     }
 }

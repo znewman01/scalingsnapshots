@@ -4,6 +4,8 @@ use sssim::rsa_accumulator::{RsaAccumulator, MODULUS};
 use std::convert::TryInto;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
+    static SIZES: &[usize] = &[1, 100];
+
     // Make accumulator with one item
     c.bench_function("acc 1", |b| {
         b.iter_batched(
@@ -15,13 +17,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             },
             |(mut acc, value)| acc.add(black_box(value)),
             BatchSize::LargeInput,
-        )
+        );
     });
 
     // create an accumulator with N items
     //make primes
-    static SIZES: &[usize] = &[1, 100];
-
     let mut group = c.benchmark_group("from_elem");
     group.sample_size(10);
     for s in SIZES.iter() {
@@ -33,16 +33,16 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         .map(|x| division_intractable_hash(&[x.try_into().unwrap()], &MODULUS))
                         .collect::<Vec<_>>()
                 },
-                |primes| RsaAccumulator::new(primes),
+                RsaAccumulator::new,
                 BatchSize::LargeInput,
-            )
+            );
         });
     }
     group.finish();
 
     //fix with https://arxiv.org/pdf/1805.10941.pdf
     c.bench_function("division_intractable_hash 1", |b| {
-        b.iter(|| division_intractable_hash(black_box(&[8u8]), &MODULUS))
+        b.iter(|| division_intractable_hash(black_box(&[8u8]), &MODULUS));
     });
 }
 

@@ -43,6 +43,7 @@ impl DataSized for RsaAccumulatorDigest {
     }
 }
 impl RsaAccumulatorDigest {
+    #[must_use]
     pub fn verify(&self, member: &Integer, witness: Integer) -> bool {
         witness
             .pow_mod(member, &MODULUS)
@@ -51,6 +52,7 @@ impl RsaAccumulatorDigest {
     }
 
     #[allow(non_snake_case)]
+    #[must_use]
     pub fn verify_nonmember(&self, value: &Integer, witness: (Integer, Integer)) -> bool {
         //TODO clean up clones
         let (a, B) = witness;
@@ -60,14 +62,15 @@ impl RsaAccumulatorDigest {
             .pow_mod(&a, &MODULUS)
             .expect("Non negative witness");
         let temp2 = B.pow_mod(value, &MODULUS).expect("Non negative value");
-        return (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone();
+        (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone()
     }
 
-    pub fn verify_append_only(&self, proof: Integer, new_state: Self) -> bool {
+    #[must_use]
+    pub fn verify_append_only(&self, proof: &Integer, new_state: Self) -> bool {
         let expected = self
             .value
             .clone()
-            .pow_mod(&proof, &MODULUS)
+            .pow_mod(proof, &MODULUS)
             .expect("non-negative");
         expected == new_state.value
     }
@@ -89,6 +92,7 @@ impl DataSized for RsaAccumulator {
     }
 }
 impl RsaAccumulator {
+    #[must_use]
     pub fn digest(&self) -> &RsaAccumulatorDigest {
         &self.digest
     }
@@ -102,22 +106,24 @@ impl RsaAccumulator {
         self.set.insert(member);
     }
 
-    pub fn remove(&mut self, member: Integer) {
+    pub fn remove(&mut self, member: &Integer) {
         self.digest = RsaAccumulatorDigest {
             value: self.prove(&member).unwrap(),
         };
         self.set.remove(&member);
     }
 
+    #[must_use]
     pub fn new(members: Vec<Integer>) -> Self {
         let mut acc = Self::default();
-        for m in members.into_iter() {
+        for m in members {
             acc.add(m);
         }
-        return acc;
+        acc
     }
 
-    pub fn prove_append_only(&self, other: Self) -> Integer {
+    #[must_use]
+    pub fn prove_append_only(&self, other: &Self) -> Integer {
         assert!(self.set.is_superset(&other.set));
         let mut prod: Integer = Integer::from(1);
         //TODO not this
@@ -128,6 +134,7 @@ impl RsaAccumulator {
     }
 
     //TODO compute all proofs?
+    #[must_use]
     pub fn prove(&self, member: &Integer) -> Option<Integer> {
         assert!(member >= &0);
         if !self.set.contains(member) {
@@ -142,6 +149,7 @@ impl RsaAccumulator {
         Some(current)
     }
 
+    #[must_use]
     pub fn prove_nonmember(&self, value: Integer) -> Option<(Integer, Integer)> {
         if self.set.contains(&value) {
             return None;
@@ -161,7 +169,7 @@ impl RsaAccumulator {
 
         let x = GENERATOR.clone();
 
-        return Some((s, x.pow_mod(&t, &MODULUS).unwrap()));
+        Some((s, x.pow_mod(&t, &MODULUS).unwrap()))
     }
 }
 
@@ -173,7 +181,7 @@ impl Arbitrary for RsaAccumulator {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-        return Just(RsaAccumulator::default()).boxed();
+        Just(RsaAccumulator::default()).boxed()
     }
 }
 
@@ -182,7 +190,7 @@ mod test {
     use super::*;
 
     fn primes() -> impl Strategy<Value = Integer> {
-        return Just(5.into());
+        Just(5.into())
     }
 
     proptest! {
@@ -193,7 +201,7 @@ mod test {
             acc.add(value.clone());
 
             let witness = acc.prove(&value).unwrap();
-            assert_eq!(acc.digest.verify(&value, witness), true);
+            assert!(acc.digest.verify(&value, witness));
         }
     }
 
@@ -207,7 +215,7 @@ mod test {
     fn test_rsa_accumulator_nonmember() {
         let mut acc = RsaAccumulator::default();
         let witness = acc.prove_nonmember(5.into()).unwrap();
-        assert_eq!(acc.digest.verify_nonmember(&5.into(), witness), true);
+        assert!(acc.digest.verify_nonmember(&5.into(), witness));
 
         acc.add(5.into());
         assert_eq!(acc.prove_nonmember(5.into()), None);

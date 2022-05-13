@@ -4,10 +4,6 @@ use rug::Complete;
 use sha3::{Sha3XofReader, Shake256};
 use std::convert::TryInto;
 
-// How sure do we want to be that our primes are actually prime?
-// We want to be 30 sure.
-const MILLER_RABIN_ITERS: u32 = 30;
-
 #[derive(Debug)]
 pub struct MyError;
 
@@ -35,7 +31,7 @@ impl IntegerHasher {
         hasher.update(data);
         let reader = hasher.finalize_xof();
         let result: Vec<u8> = vec![0; digits];
-        Self { result, reader }
+        Self { reader, result }
     }
 
     fn hash(&mut self) -> rug::Integer {
@@ -66,9 +62,9 @@ where
             .complete();
         Self {
             rand,
+            modulus,
             bits,
             t,
-            modulus,
         }
     }
 
@@ -89,16 +85,13 @@ where
     }
 }
 
+#[must_use]
 pub fn division_intractable_hash(data: &[u8], modulus: &rug::Integer) -> rug::Integer {
     // We want a random number with a number of bits just greater than modulus
     // has. significant_digits gives us the right number of bytes.
     let digits: usize = modulus.significant_digits::<u8>();
     let mut bar = IntegerHasher::new(data, digits);
-
-    let mut foo = RandMod::new(|| bar.hash(), modulus);
-
-    let candidate = foo.rand_mod();
-    candidate
+    RandMod::new(|| bar.hash(), modulus).rand_mod()
 }
 
 #[cfg(test)]
