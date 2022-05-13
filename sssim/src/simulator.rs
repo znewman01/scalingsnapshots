@@ -2,10 +2,12 @@ use std::collections::HashMap;
 
 use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, Package, PackageId, UserId};
-use crate::util::{data_size_as_bytes, DataSize, DataSized};
+use crate::util::DataSized;
 use crate::Authenticator;
 use serde::{Serialize, Serializer};
 use time::Duration;
+use uom::si::u64::Information;
+use uom::ConstZero;
 
 fn serialize_ns<S>(duration: &Duration, s: S) -> Result<S::Ok, S::Error>
 where
@@ -27,10 +29,10 @@ pub struct ResourceUsage {
     /// Client-side computation time used to handle this request.
     #[serde(rename = "user_compute_ns", serialize_with = "serialize_ns")]
     user_compute: Duration, // TODO: make optional
-    #[serde(rename = "bandwidth_bytes", serialize_with = "data_size_as_bytes")]
-    bandwidth: DataSize,
-    #[serde(rename = "server_storage_bytes", serialize_with = "data_size_as_bytes")]
-    storage: DataSize,
+    #[serde(rename = "bandwidth_bytes")]
+    bandwidth: Information,
+    #[serde(rename = "server_storage_bytes")]
+    storage: Information,
 }
 
 /// A simulator for a secure software repository.
@@ -126,7 +128,7 @@ where
         ResourceUsage {
             server_compute: server_upload,
             user_compute: Duration::ZERO,
-            bandwidth: DataSize::zero(),
+            bandwidth: Information::ZERO,
             storage: self.authenticator.size(),
         }
     }

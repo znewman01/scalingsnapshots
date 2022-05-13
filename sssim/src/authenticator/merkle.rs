@@ -1,26 +1,35 @@
+use serde::{Serialize, Serializer};
 //TODO: add hash
 use smtree::index::TreeIndex;
 use smtree::node_template::HashNodeSmt;
 use smtree::pad_secret::ALL_ZEROS_SECRET;
 use smtree::proof::MerkleProof;
-use smtree::traits::{InclusionProvable, ProofExtractable, Serializable};
+use smtree::traits::{InclusionProvable, ProofExtractable};
 use smtree::tree::SparseMerkleTree;
 use std::collections::HashMap;
+use uom::si::information::byte;
+use uom::si::u64::Information;
+use uom::ConstZero;
 
 use authenticator::{ClientSnapshot, Revision};
 
-use crate::{
-    authenticator,
-    log::PackageId,
-    util::{DataSize, DataSized},
-};
+use crate::{authenticator, log::PackageId, util::DataSized};
 
 static TREE_HEIGHT: usize = 256;
 type Node = HashNodeSmt<blake3::Hasher>;
 type Root = <Node as ProofExtractable>::ProofNode;
 
-#[derive(Default, Clone, Debug)]
+fn smtree_serialize<S, V>(value: &V, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    V: smtree::traits::Serializable,
+{
+    s.serialize_bytes(&smtree::traits::Serializable::serialize(value))
+}
+
+#[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
+    #[serde(serialize_with = "smtree_serialize")]
     root: Root,
 }
 
@@ -30,19 +39,15 @@ impl Snapshot {
     }
 }
 
-impl DataSized for Snapshot {
-    fn size(&self) -> DataSize {
-        DataSize::from_bytes(32) // blake3 output size
-    }
+#[derive(Debug, Clone, Serialize)]
+pub struct Proof {
+    #[serde(serialize_with = "smtree_serialize")]
+    inner: MerkleProof<Node>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Proof(MerkleProof<Node>);
-
-impl DataSized for Proof {
-    fn size(&self) -> DataSize {
-        let len: usize = self.0.serialize().len();
-        DataSize::from_bytes(len.try_into().expect("it really shouldn't be that big"))
+impl From<MerkleProof<Node>> for Proof {
+    fn from(inner: MerkleProof<Node>) -> Self {
+        Proof { inner }
     }
 }
 
@@ -78,14 +83,14 @@ impl ClientSnapshot for Snapshot {
     ) -> bool {
         let expected_index = TreeIndex::new(TREE_HEIGHT, hash(package_id.0.as_bytes()));
         let leaf = Node::new(hash(&revision.0.to_be_bytes()).to_vec());
-        let idxs = proof.0.get_indexes();
+        let idxs = proof.inner.get_indexes();
         if idxs.len() != 1 {
             return false;
         }
         if idxs[0] != expected_index {
             return false;
         }
-        if !proof.0.verify(&leaf, &self.root) {
+        if !proof.inner.verify(&leaf, &self.root) {
             return false;
         }
         true
@@ -135,31 +140,32 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         let proof = MerkleProof::<Node>::generate_inclusion_proof(&self.tree, &[idx])
             .expect("Proof generation failed.");
 
-        (*revision, Proof(proof))
+        (*revision, proof.into())
     }
 }
 
 impl DataSized for Authenticator {
-    fn size(&self) -> DataSize {
+    fn size(&self) -> Information {
         // TODO: better to serialize then figure out the size?
         // also gzip?
-        let mut snapshot_size: u64 =
-            TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
+        let mut snapshot_size = Information::new::<byte>(
+            TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big"),
+        );
         for (package_id, revision) in &self.revisions {
-            snapshot_size += package_id.size().bytes();
-            snapshot_size += revision.size().bytes();
+            snapshot_size += package_id.size();
+            snapshot_size += revision.size();
         }
 
-        let mut tree_size = 0;
+        let mut tree_size = Information::ZERO;
         for _ in itertools::chain!(
             self.tree.get_leaves().into_iter(),
             self.tree.get_internals().into_iter(),
             self.tree.get_paddings().into_iter(),
         ) {
-            tree_size += 32; // blake3 output fixed
+            tree_size += Information::new::<byte>(32); // blake3 output fixed
         }
 
-        DataSize::from_bytes(snapshot_size + tree_size)
+        snapshot_size + tree_size
     }
 }
 

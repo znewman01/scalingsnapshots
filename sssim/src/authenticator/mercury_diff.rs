@@ -3,43 +3,24 @@ use std::collections::HashMap;
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
+use serde::Serialize;
+
 use crate::{
     authenticator::{self, ClientSnapshot, Revision},
     log::PackageId,
-    util::{DataSize, DataSized},
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Serialize)]
 pub struct Metadata {
     revision: Revision,
 }
 
-impl DataSized for Metadata {
-    fn size(&self) -> DataSize {
-        DataSize::from_bytes(std::mem::size_of::<Self>().try_into().unwrap())
-    }
-}
-
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
     packages: HashMap<PackageId, Metadata>,
     id: u64,
-}
-
-impl DataSized for Snapshot {
-    fn size(&self) -> DataSize {
-        // TODO: better to serialize then figure out the size?
-        // also gzip?
-        let mut size: u64 = TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (package_id, metadata) in &self.packages {
-            // TODO: only add if new since last update
-            size += package_id.size().bytes();
-            size += metadata.size().bytes();
-        }
-        DataSize::from_bytes(size)
-    }
 }
 
 /// The mercury TUF client snapshot contains *all* the snapshot state.
@@ -94,7 +75,7 @@ impl ClientSnapshot for Snapshot {
 }
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize)]
 pub struct Authenticator {
     snapshots: HashMap<u64, Snapshot>,
     snapshot: Snapshot,
@@ -150,12 +131,6 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             .get(package)
             .expect("Should never get a request for a package that's missing.");
         (metadata.revision, ())
-    }
-}
-
-impl DataSized for Authenticator {
-    fn size(&self) -> DataSize {
-        self.snapshot.size()
     }
 }
 

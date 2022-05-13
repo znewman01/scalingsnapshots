@@ -1,6 +1,6 @@
-use crate::util::{DataSize, DataSized};
 use lazy_static::lazy_static;
 use rug::Integer;
+use serde::Serialize;
 use std::collections::HashSet;
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
@@ -21,7 +21,7 @@ lazy_static! {
     static ref GENERATOR: Integer = Integer::from(65537);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct RsaAccumulatorDigest {
     value: Integer,
 }
@@ -35,11 +35,6 @@ impl Default for RsaAccumulatorDigest {
 impl From<Integer> for RsaAccumulatorDigest {
     fn from(value: Integer) -> Self {
         RsaAccumulatorDigest { value }
-    }
-}
-impl DataSized for RsaAccumulatorDigest {
-    fn size(&self) -> DataSize {
-        self.value.size()
     }
 }
 impl RsaAccumulatorDigest {
@@ -76,21 +71,12 @@ impl RsaAccumulatorDigest {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize)]
 pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     set: HashSet<Integer>,
 }
-impl DataSized for RsaAccumulator {
-    fn size(&self) -> DataSize {
-        let set_size = self
-            .set
-            .len()
-            .checked_mul(MODULUS.size().bytes().try_into().unwrap());
-        let set_size_bytes: u64 = set_size.expect("no overflow").try_into().unwrap();
-        DataSize::from_bytes(self.digest.size().bytes() + set_size_bytes)
-    }
-}
+
 impl RsaAccumulator {
     #[must_use]
     pub fn digest(&self) -> &RsaAccumulatorDigest {
@@ -108,9 +94,9 @@ impl RsaAccumulator {
 
     pub fn remove(&mut self, member: &Integer) {
         self.digest = RsaAccumulatorDigest {
-            value: self.prove(&member).unwrap(),
+            value: self.prove(member).unwrap(),
         };
-        self.set.remove(&member);
+        self.set.remove(member);
     }
 
     #[must_use]
