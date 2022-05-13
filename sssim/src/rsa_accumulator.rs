@@ -21,7 +21,7 @@ lazy_static! {
     static ref GENERATOR: Integer = Integer::from(65537);
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct RsaAccumulatorDigest {
     value: Integer,
 }

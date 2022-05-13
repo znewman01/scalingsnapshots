@@ -1,29 +1,23 @@
-use crate::rsa_accumulator::RsaAccumulatorDigest;
-use bincode::Encode;
+use crate::{
+    hash_to_prime::division_intractable_hash,
+    rsa_accumulator::{RsaAccumulator, RsaAccumulatorDigest, MODULUS},
+};
+use rug::Integer;
+use serde::Serialize;
 use std::collections::HashMap;
 
 use authenticator::{ClientSnapshot, Hash, Revision};
 
-use crate::{
-    authenticator,
-    log::PackageId,
-    util::{DataSize, DataSized},
-};
+use crate::{authenticator, log::PackageId};
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
     rsa_state: RsaAccumulatorDigest,
 }
 
 impl Snapshot {
-    pub fn new(state: RsaAccumulatorDigest) -> Self {
-        Self { state }
-    }
-}
-
-impl DataSized for Snapshot {
-    fn size(&self) -> DataSize {
-        self.rsa_state.size()
+    pub fn new(rsa_state: RsaAccumulatorDigest) -> Self {
+        Self { rsa_state }
     }
 }
 
@@ -32,7 +26,7 @@ pub struct Proof(Hash, Integer);
 
 impl ClientSnapshot for Snapshot {
     type Id = RsaAccumulatorDigest;
-    type Diff = (Self);
+    type Diff = Self;
     type Proof = Proof;
 
     fn id(&self) -> Self::Id {
@@ -40,7 +34,7 @@ impl ClientSnapshot for Snapshot {
     }
 
     fn update(&mut self, diff: Self::Diff) {
-        self.rsa_state = diff;
+        self.rsa_state = diff.rsa_state;
     }
 
     fn check_no_rollback(&self, _diff: &Self::Diff) -> bool {
@@ -54,17 +48,17 @@ impl ClientSnapshot for Snapshot {
         revision: Revision,
         proof: Self::Proof,
     ) -> bool {
-        let (h, p) = proof;
+        let (h, p) = (proof.0, proof.1);
         let encoded = bincode::serialize(&(h, revision, package_id)).unwrap();
-        let prime = division_intractable_hash(encoded, Modulus);
-        if !self.rsa_state.verify(prime, p) {
+        let prime = division_intractable_hash(&encoded, &MODULUS);
+        if !self.rsa_state.verify(&prime, p) {
             return false;
         }
         true
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize)]
 pub struct Authenticator {
     rsa_acc: RsaAccumulator,
     revisions: HashMap<PackageId, Revision>,
@@ -76,10 +70,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
     ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        if snapshot_id == self.rsa_acc.digest() {
+        if &snapshot_id == self.rsa_acc.digest() {
             return None;
         }
-        return Some(self.rsa_acc.digest());
+        Some(Snapshot::new(self.rsa_acc.digest().clone()))
     }
 
     fn publish(&mut self, package: &PackageId) -> () {
@@ -89,13 +83,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
         if revision.0 != 1 {
             let h = Hash::default();
-            let encoded = bincode::serialize(&(h, revision.0 - 1, package_id)).unwrap();
-            let prime = division_intractable_hash(encoded, Modulus);
-            self.rsa_acc.remove(prime);
+            let encoded = bincode::serialize(&(h, revision.0 - 1, package)).unwrap();
+            let prime = division_intractable_hash(&encoded, &MODULUS);
+            self.rsa_acc.remove(&prime);
         }
         let h = Hash::default();
-        let encoded = bincode::serialize(&(h, revision.0, package_id)).unwrap();
-        let prime = division_intractable_hash(encoded, Modulus);
+        let encoded = bincode::serialize(&(h, revision.0, package)).unwrap();
+        let prime = division_intractable_hash(&encoded, &MODULUS);
         self.rsa_acc.add(prime);
     }
 
@@ -109,28 +103,11 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             .revisions
             .get(package)
             .expect("Should never get a request for a package that's missing.");
-        let encoded = bincode::serialize(&(h, revision, package_id)).unwrap();
-        let prime = division_intractable_hash(encoded, Modulus);
+        let encoded = bincode::serialize(&(h, revision, package)).unwrap();
+        let prime = division_intractable_hash(&encoded, &MODULUS);
 
-        let proof = rsa_acc.prove(prime);
-        (*revision, Proof(proof))
-    }
-}
-
-impl DataSized for Authenticator {
-    fn size(&self) -> DataSize {
-        // TODO: better to serialize then figure out the size?
-        // also gzip?
-        let mut snapshot_size: u64 =
-            TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big");
-        for (package_id, revision) in self.revisions.iter() {
-            snapshot_size += package_id.size().bytes();
-            snapshot_size += revision.size().bytes();
-        }
-
-        let rsa_size = rsa_acc.size().to_bytes();
-
-        DataSize::from_bytes(snapshot_size + rsa_size)
+        let proof = self.rsa_acc.prove(&prime).expect("proof failed");
+        (*revision, Proof(h, proof))
     }
 }
 
