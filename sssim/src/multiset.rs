@@ -18,6 +18,26 @@ impl<T: Hash + Eq> MultiSet<T> {
         *self.inner.get(member).unwrap_or(&0)
     }
 
+    pub fn remove(&mut self, member: &T) -> bool {
+        let value = self.inner.get_mut(member);
+        match value {
+            Some(v) if *v > 1 => {
+                *v -= 1;
+                true
+            }
+            Some(v) if *v == 1 => {
+                self.inner.remove(member);
+                true
+            }
+            Some(_) => panic!("invalid; should never have 0 value in hashmap"),
+            None => false,
+        }
+    }
+
+    pub fn clear(&mut self, member: &T) -> Option<u32> {
+        self.inner.remove(member).clone()
+    }
+
     pub fn iter<'a>(&'a self) -> impl std::iter::Iterator<Item = (&'a T, &u32)> {
         self.inner.iter()
     }

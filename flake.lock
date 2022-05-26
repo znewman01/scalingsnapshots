@@ -185,6 +185,7 @@
         "poetry2nix": "poetry2nix"
       },
       "locked": {
+        "lastModified": 1,
         "narHash": "sha256-lcZdfmO9gtE5PnaGPtaieGOhXsEsoP5Le/TRkSXkoCk=",
         "path": "generate-package-data",
         "type": "path"
@@ -430,6 +431,7 @@
         "poetry2nix": "poetry2nix_2"
       },
       "locked": {
+        "lastModified": 1,
         "narHash": "sha256-U7yky0CIlqZ0c8/3WHqCCfALdBO8N+1PcEEqZ2XTfQg=",
         "path": "analysis",
         "type": "path"
@@ -446,6 +448,7 @@
         "poetry2nix": "poetry2nix_3"
       },
       "locked": {
+        "lastModified": 1,
         "narHash": "sha256-+vOBfmNN+2WuHrUBsL65C/YZIFTLfHXhGr4jztqkYsg=",
         "path": "logparser",
         "type": "path"
@@ -463,7 +466,8 @@
         "nixpkgs": "nixpkgs_5"
       },
       "locked": {
-        "narHash": "sha256-ZW8GZLJd3oZYAlyDMui0Cr38D4J4U/C0FZI3XJW9Acc=",
+        "lastModified": 1,
+        "narHash": "sha256-IkMUMHLFNokISirCTt+RW1VO5nHWUkXGowF/ECERG44=",
         "path": "sssim",
         "type": "path"
       },

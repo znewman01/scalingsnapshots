@@ -40,23 +40,62 @@ impl From<Integer> for RsaAccumulatorDigest {
     }
 }
 
-type MembershipWitness = Integer;
-type NonMembershipWitness = (Integer, Integer);
-pub type Witness = (MembershipWitness, NonMembershipWitness);
+#[derive(Clone, Serialize)]
+struct MembershipWitness(Integer);
+
+#[derive(Clone, Serialize)]
+struct NonMembershipWitness {
+    exp: Integer,
+    base: Integer,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Witness {
+    member: Option<MembershipWitness>,
+    nonmember: NonMembershipWitness,
+}
+
+impl Witness {
+    fn new(member: MembershipWitness, nonmember: NonMembershipWitness) -> Self {
+        Witness {
+            member: Some(member),
+            nonmember,
+        }
+    }
+
+    fn for_zero(nonmember: NonMembershipWitness) -> Self {
+        Witness {
+            member: None,
+            nonmember,
+        }
+    }
+}
 
 impl RsaAccumulatorDigest {
     #[must_use]
     pub fn verify(&self, member: &Integer, revision: u32, witness: Witness) -> bool {
-        // member@revision is valid IF member@revision is in the set and
-        // member@(revision+1) is not.
-        self.verify_member(member, revision, witness.0)
-            && self.verify_nonmember(member, revision + 1, witness.1)
+        // member@revision is valid IF
+        // (a) member@revision is in the set and
+        // (b) member is NOT in the set corresponding to the membership proof for (a)
+
+        match witness.member {
+            Some(mem_pf) => {
+                self.verify_member(member, revision, mem_pf.clone())
+                    && RsaAccumulatorDigest::from(mem_pf.0)
+                        .verify_nonmember(member, witness.nonmember)
+            }
+            None => {
+                // Special-case: revision = 0 has no membership proof.
+                revision == 0 && self.verify_nonmember(member, witness.nonmember)
+            }
+        }
     }
 
     #[must_use]
-    fn verify_member(&self, member: &Integer, revision: u32, witness: Integer) -> bool {
+    fn verify_member(&self, member: &Integer, revision: u32, witness: MembershipWitness) -> bool {
         let exponent = member.pow(&revision.into());
         witness
+            .0
             .pow_mod(&exponent.into(), &MODULUS)
             .expect("Non negative member")
             == self.value
@@ -64,22 +103,19 @@ impl RsaAccumulatorDigest {
 
     #[allow(non_snake_case)]
     #[must_use]
-    fn verify_nonmember(
-        &self,
-        member: &Integer,
-        revision: u32,
-        witness: NonMembershipWitness,
-    ) -> bool {
-        //TODO clean up clones
-        let (a, B) = witness;
+    fn verify_nonmember(&self, member: &Integer, witness: NonMembershipWitness) -> bool {
+        // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
+        // TODO: check size of member
+        // TODO: check size of witness
+        // TODO: clean up clones
         let temp1 = self
             .value
             .clone()
-            .pow_mod(&a, &MODULUS)
+            .pow_mod(&witness.exp, &MODULUS)
             .expect("Non negative witness");
-        let exponent = member.pow(&revision.into());
-        let temp2 = B
-            .pow_mod(&exponent.into(), &MODULUS)
+        let temp2 = witness
+            .base
+            .pow_mod(member, &MODULUS)
             .expect("Non negative value");
         (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone()
     }
@@ -120,7 +156,7 @@ impl RsaAccumulator {
     pub fn prove_append_only(&self, other: &Self) -> Integer {
         assert!(self.multiset.is_superset(&other.multiset));
         let mut prod: Integer = 1.into();
-        //TODO not this
+        // TODO: not this
         for (elem, count) in self.multiset.difference(&other.multiset) {
             prod *= Integer::from(elem.pow(count));
         }
@@ -128,9 +164,21 @@ impl RsaAccumulator {
     }
 
     pub fn prove(&self, member: &Integer, revision: u32) -> Option<Witness> {
+        if revision == 0 {
+            return self.prove_nonmember(member).map(Witness::for_zero);
+        }
         self.prove_member(member, revision).and_then(|mem_pf| {
-            self.prove_nonmember(member, revision)
-                .map(|nonmem_pf| (mem_pf, nonmem_pf))
+            // TODO: more efficiently/better
+            let mut ms = self.multiset.clone();
+            for _ in 0..revision {
+                ms.remove(member);
+            }
+            let acc = RsaAccumulator {
+                digest: RsaAccumulatorDigest::from(mem_pf.0.clone()),
+                multiset: ms,
+            };
+            acc.prove_nonmember(member)
+                .map(|nonmem_pf| Witness::new(mem_pf, nonmem_pf))
         })
     }
 
@@ -142,25 +190,24 @@ impl RsaAccumulator {
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
         assert!(member >= &0);
-        let count = self.multiset.get(member);
-        if count < revision {
+        if revision > self.multiset.get(member) {
             return None;
         }
-        let mut current = GENERATOR.clone();
+        let mut res = GENERATOR.clone();
         for (s, count) in self.multiset.iter() {
             if s != member {
                 let exp = Integer::from(s.pow(count));
-                current.pow_mod_mut(&exp, &MODULUS).expect("member > 0");
+                res.pow_mod_mut(&exp, &MODULUS).expect("member > 0");
             }
         }
-        Some(current)
+        Some(MembershipWitness(res))
     }
 
     #[must_use]
-    fn prove_nonmember(&self, value: &Integer, revision: u32) -> Option<NonMembershipWitness> {
-        let count = self.multiset.get(&value);
-        if count >= revision {
-            return None;
+    fn prove_nonmember(&self, value: &Integer) -> Option<NonMembershipWitness> {
+        // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
+        if self.multiset.get(&value) != 0 {
+            return None; // value is a member!
         }
 
         let mut exp = Integer::from(1);
@@ -169,15 +216,20 @@ impl RsaAccumulator {
             exp *= Integer::from(s.pow(count));
         }
 
-        let (g, s, t) = exp.gcd_cofactors(value.pow(revision).into(), Integer::new());
+        // Bezout coefficients:
+        // gcd = exp * s + value * t
+        let (gcd, s, t) = exp.gcd_cofactors(value.into(), Integer::new());
 
-        if g != 1 {
-            return None;
+        if gcd != 1 {
+            unreachable!("value should be coprime with the exponent of the accumulator");
         }
 
         let x = GENERATOR.clone();
 
-        Some((s, x.pow_mod(&t, &MODULUS).unwrap()))
+        Some(NonMembershipWitness {
+            exp: s,
+            base: x.pow_mod(&t, &MODULUS).unwrap(),
+        })
     }
 }
 
@@ -204,12 +256,15 @@ mod test {
     proptest! {
         #[test]
         fn test_rsa_accumulator_inner(mut acc: RsaAccumulator, value in primes()) {
-            assert_eq!(acc.prove(&value), None);
-
-            acc.add(value.clone());
-
-            let witness = acc.prove(&value).unwrap();
-            assert!(acc.digest.verify(&value, witness));
+            for rev in 0..10 {
+                if rev > 0 {
+                    assert!(acc.prove(&value, rev - 1).is_none());
+                }
+                assert!(acc.prove(&value, rev + 1).is_none());
+                let witness = acc.prove(&value, rev).expect("should be able to prove current revision");
+                assert!(acc.digest.verify(&value, rev, witness));
+                acc.increment(value.clone());
+            }
         }
     }
 
@@ -217,15 +272,5 @@ mod test {
     fn test_rsa_accumulator() {
         let acc = RsaAccumulator::default();
         assert_eq!(acc.digest.value, GENERATOR.clone());
-    }
-
-    #[test]
-    fn test_rsa_accumulator_nonmember() {
-        let mut acc = RsaAccumulator::default();
-        let witness = acc.prove_nonmember(5.into()).unwrap();
-        assert!(acc.digest.verify_nonmember(&5.into(), witness));
-
-        acc.add(5.into());
-        assert_eq!(acc.prove_nonmember(5.into()), None);
     }
 }
