@@ -1,3 +1,4 @@
+mod hackage;
 mod insecure;
 mod mercury_diff;
 mod mercury_hash;
@@ -59,6 +60,7 @@ pub trait ClientSnapshot {
 pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
 
+    // TODO: deref PackageId
     fn publish(&mut self, package: &PackageId);
 
     fn request_file(&self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
