@@ -18,15 +18,9 @@ use crate::{
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Clone, Serialize)]
-pub struct Metadata {
-    revision: Revision,
-}
-
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
-    packages: HashMap<PackageId, Metadata>,
+    packages: HashMap<PackageId, Revision>,
     id: u64,
 }
 
@@ -46,14 +40,14 @@ impl ClientSnapshot for Snapshot {
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in &self.packages {
-            let new_metadata = match diff.packages.get(package_id) {
+        for (package_id, old_revision) in &self.packages {
+            let new_revision = match diff.packages.get(package_id) {
                 None => {
                     return false;
                 }
-                Some(m) => m,
+                Some(r) => r,
             };
-            if new_metadata.revision < metadata.revision {
+            if new_revision < old_revision {
                 return false;
             }
         }
@@ -66,8 +60,8 @@ impl ClientSnapshot for Snapshot {
         revision: Revision,
         _: Self::Proof,
     ) -> bool {
-        if let Some(metadata) = self.packages.get(package_id) {
-            metadata.revision == revision
+        if let Some(old_revision) = self.packages.get(package_id) {
+            &revision == old_revision
         } else {
             false
         }
@@ -97,8 +91,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn publish(&mut self, package: &PackageId) {
         self.snapshot.id += 1;
         let entry = self.snapshot.packages.entry(package.clone());
-        let mut metadata = entry.or_insert_with(Metadata::default);
-        metadata.revision.0 += 1;
+        let mut revision = entry.or_insert_with(Revision::default);
+        revision.0 += 1;
     }
 
     fn request_file(
@@ -106,12 +100,12 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         package: &PackageId,
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
-        let metadata = self
+        let revision = self
             .snapshot
             .packages
             .get(package)
             .expect("Should never get a request for a package that's missing.");
-        (metadata.revision, ())
+        (*revision, ())
     }
 }
 
