@@ -88,11 +88,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(self.snapshot.clone())
     }
 
-    fn publish(&mut self, package: &PackageId) {
+    fn publish(&mut self, package: PackageId) {
         self.snapshot.id += 1;
-        let entry = self.snapshot.packages.entry(package.clone());
-        let mut revision = entry.or_insert_with(Revision::default);
-        revision.0 += 1;
+        self.snapshot
+            .packages
+            .entry(package.clone())
+            .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
+            .or_insert_with(Revision::default);
     }
 
     fn request_file(

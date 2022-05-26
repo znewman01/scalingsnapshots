@@ -112,14 +112,16 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(diff)
     }
 
-    fn publish(&mut self, package: &PackageId) {
+    fn publish(&mut self, package: PackageId) {
         self.snapshots
             .insert(self.snapshot.id, self.snapshot.clone());
         let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
-        let entry = self.snapshot.packages.entry(package.clone());
-        let mut metadata = entry.or_insert_with(Metadata::default);
-        metadata.revision.0 += 1;
+        self.snapshot
+            .packages
+            .entry(package.clone())
+            .and_modify(|m| m.revision.0 = m.revision.0.checked_add(1).unwrap())
+            .or_insert_with(Metadata::default);
     }
 
     fn request_file(

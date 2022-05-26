@@ -120,11 +120,11 @@ where
         }
     }
 
-    fn process_publish(&mut self, package: &Package) -> ResourceUsage {
+    fn process_publish(&mut self, package: Package) -> ResourceUsage {
         if let Some(length) = package.length {
             self.package_lengths.insert(package.id.clone(), length);
         }
-        let (server_upload, _) = Duration::time_fn(|| self.authenticator.publish(&package.id));
+        let (server_upload, _) = Duration::time_fn(|| self.authenticator.publish(package.id));
         ResourceUsage {
             server_compute: server_upload,
             user_compute: Duration::ZERO,
@@ -138,7 +138,7 @@ where
         match action {
             Action::Download { user, package } => self.process_download(user.clone(), package),
             Action::RefreshMetadata { user } => self.process_refresh_metadata(user.clone()),
-            Action::Publish { package } => self.process_publish(package),
+            Action::Publish { package } => self.process_publish(package.clone()),
         }
     }
 }

@@ -80,14 +80,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(diff)
     }
 
-    fn publish(&mut self, package_id: &PackageId) {
-        let mut revision = self
+    fn publish(&mut self, package: PackageId) {
+        let revision = self
             .package_revisions
-            .entry(package_id.clone())
-            .or_insert(Revision::from(0));
-        revision.0 += 1;
-        self.log
-            .push((package_id.clone(), self.package_revisions[package_id]))
+            .entry(package.clone())
+            .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
+            .or_insert_with(Revision::default);
+        self.log.push((package, *revision));
     }
 
     fn request_file(

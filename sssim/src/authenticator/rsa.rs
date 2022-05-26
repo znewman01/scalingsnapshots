@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use crate::{
     hash_to_prime::division_intractable_hash,
     rsa_accumulator::{RsaAccumulator, RsaAccumulatorDigest, Witness, MODULUS},
@@ -47,7 +49,7 @@ impl ClientSnapshot for Snapshot {
         let prime = division_intractable_hash(&encoded, &MODULUS);
         if !self
             .rsa_state
-            .verify(&prime, revision.0.try_into().unwrap(), proof)
+            .verify(&prime, revision.0.get().try_into().unwrap(), proof)
         {
             return false;
         }
@@ -72,8 +74,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(Snapshot::new(self.rsa_acc.digest().clone()))
     }
 
-    fn publish(&mut self, package: &PackageId) -> () {
-        let encoded = bincode::serialize(package).unwrap();
+    fn publish(&mut self, package: PackageId) -> () {
+        let encoded = bincode::serialize(&package).unwrap();
         let prime = division_intractable_hash(&encoded, &MODULUS);
         self.rsa_acc.increment(prime);
     }
@@ -87,9 +89,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         let prime = division_intractable_hash(&encoded, &MODULUS);
 
         let revision = self.rsa_acc.get(&prime);
-
         let proof = self.rsa_acc.prove(&prime, revision).expect("proof failed");
-        (Revision::from(u64::from(revision)), proof)
+
+        let revision: NonZeroU64 = u64::from(revision).try_into().unwrap();
+        (Revision::from(revision), proof)
     }
 }
 

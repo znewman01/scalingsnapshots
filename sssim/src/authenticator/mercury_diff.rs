@@ -16,6 +16,12 @@ pub struct Metadata {
     revision: Revision,
 }
 
+impl From<Revision> for Metadata {
+    fn from(revision: Revision) -> Self {
+        Self { revision }
+    }
+}
+
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
@@ -110,14 +116,17 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(diff)
     }
 
-    fn publish(&mut self, package: &PackageId) {
+    fn publish(&mut self, package: PackageId) {
         self.snapshots
             .insert(self.snapshot.id, self.snapshot.clone());
         let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
-        let entry = self.snapshot.packages.entry(package.clone());
-        let mut metadata = entry.or_insert_with(Metadata::default);
-        metadata.revision.0 += 1;
+        let entry = self
+            .snapshot
+            .packages
+            .entry(package)
+            .and_modify(|m| m.revision.0 = m.revision.0.checked_add(1).unwrap())
+            .or_insert_with(Metadata::default);
     }
 
     fn request_file(

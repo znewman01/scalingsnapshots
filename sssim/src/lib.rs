@@ -1,3 +1,4 @@
+#![feature(nonzero_ops)]
 pub mod authenticator;
 pub mod hash_to_prime;
 pub mod log;

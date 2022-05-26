@@ -82,7 +82,7 @@ impl ClientSnapshot for Snapshot {
         proof: Self::Proof,
     ) -> bool {
         let expected_index = TreeIndex::new(TREE_HEIGHT, hash(package_id.0.as_bytes()));
-        let leaf = Node::new(hash(&revision.0.to_be_bytes()).to_vec());
+        let leaf = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
         let idxs = proof.inner.get_indexes();
         if idxs.len() != 1 {
             return false;
@@ -117,13 +117,15 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Some(Snapshot::new(my_root))
     }
 
-    fn publish(&mut self, package: &PackageId) {
-        let entry = self.revisions.entry(package.clone());
-        let mut revision = entry.or_insert_with(Revision::default);
-        revision.0 += 1;
-
+    fn publish(&mut self, package: PackageId) {
         let idx = TreeIndex::new(TREE_HEIGHT, hash(package.0.as_bytes()));
-        let node = Node::new(hash(&revision.0.to_be_bytes()).to_vec());
+        let revision = self
+            .revisions
+            .entry(package)
+            .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
+            .or_insert_with(Revision::default);
+
+        let node = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
         self.tree.update(&idx, node, &ALL_ZEROS_SECRET);
     }
 

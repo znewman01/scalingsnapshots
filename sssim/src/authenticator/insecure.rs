@@ -47,14 +47,14 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         None
     }
 
-    fn publish(&mut self, release: &PackageId) {}
+    fn publish(&mut self, release: PackageId) {}
 
     fn request_file(
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         file: &PackageId,
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
-        (Revision::from(0), ())
+        (Revision::default(), ())
     }
 }
 

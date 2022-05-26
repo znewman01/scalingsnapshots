@@ -6,6 +6,8 @@ mod mercury_hash_diff;
 mod merkle;
 mod rsa;
 mod vanilla_tuf;
+use std::num::NonZeroU64;
+
 pub use insecure::Authenticator as Insecure;
 use serde::Serialize;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
@@ -15,13 +17,31 @@ use crate::{log::PackageId, util::DataSized};
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-#[cfg_attr(test, derive(Arbitrary))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub struct Revision(pub u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct Revision(pub NonZeroU64);
 
-impl From<u64> for Revision {
-    fn from(revision: u64) -> Self {
+impl From<NonZeroU64> for Revision {
+    fn from(revision: NonZeroU64) -> Self {
         Self(revision)
+    }
+}
+
+impl Default for Revision {
+    fn default() -> Self {
+        Self::from(NonZeroU64::try_from(1).expect("1 > 0"))
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for Revision {
+    type Strategy = BoxedStrategy<Revision>;
+    type Parameters = ();
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        any::<u64>()
+            .prop_filter_map("nonzero", |x| NonZeroU64::try_from(x).ok())
+            .prop_map(Revision::from)
+            .boxed()
     }
 }
 
@@ -60,8 +80,7 @@ pub trait ClientSnapshot {
 pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
 
-    // TODO: deref PackageId
-    fn publish(&mut self, package: &PackageId);
+    fn publish(&mut self, package: PackageId);
 
     fn request_file(&self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
 }
