@@ -130,7 +130,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     }
 
     fn request_file(
-        &self,
+        &mut self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         package: &PackageId,
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {

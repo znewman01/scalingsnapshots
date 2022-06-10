@@ -155,7 +155,7 @@ where
     }
 
     fn request_file(
-        &self,
+        &mut self,
         snapshot_id: <Snapshot<A::Digest> as ClientSnapshot>::Id,
         package: &PackageId,
     ) -> (Revision, <Snapshot<A::Digest> as ClientSnapshot>::Proof) {

@@ -50,7 +50,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn publish(&mut self, release: PackageId) {}
 
     fn request_file(
-        &self,
+        &mut self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
         file: &PackageId,
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {

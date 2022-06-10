@@ -228,7 +228,7 @@ impl Accumulator for RsaAccumulator {
         prod
     }
 
-    fn prove(&self, member: &Integer, revision: u32) -> Option<Witness> {
+    fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
         if revision == 0 {
             return self.prove_nonmember(member).map(Witness::for_zero);
         }

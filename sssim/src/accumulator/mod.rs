@@ -1,6 +1,7 @@
 use rug::Integer;
 
 pub mod rsa;
+pub mod rsa_optimized; // todo: rename to caching
 
 pub trait Digest {
     type Witness;
@@ -31,7 +32,11 @@ pub trait Accumulator {
     fn prove_append_only(&self, other: &Self) -> Integer;
 
     #[must_use]
-    fn prove(&self, member: &Integer, revision: u32) -> Option<<Self::Digest as Digest>::Witness>;
+    fn prove(
+        &mut self,
+        member: &Integer,
+        revision: u32,
+    ) -> Option<<Self::Digest as Digest>::Witness>;
 
     #[must_use]
     fn get(&self, member: &Integer) -> u32;
