@@ -94,6 +94,8 @@ pub fn division_intractable_hash(data: &[u8], modulus: &rug::Integer) -> rug::In
     RandMod::new(|| bar.hash(), modulus).rand_mod()
 }
 
+// TODO: hash to 256-bit (security parameter) prime
+
 #[cfg(test)]
 mod tests {
     use super::*;

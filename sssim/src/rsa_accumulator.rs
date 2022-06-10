@@ -22,7 +22,7 @@ lazy_static! {
     static ref GENERATOR: Integer = Integer::from(65537);
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
 pub struct RsaAccumulatorDigest {
     value: Integer,
 }
@@ -70,6 +70,8 @@ impl Witness {
         }
     }
 }
+
+pub type AppendOnlyWitness = Integer;
 
 impl RsaAccumulatorDigest {
     #[must_use]
@@ -121,7 +123,7 @@ impl RsaAccumulatorDigest {
     }
 
     #[must_use]
-    pub fn verify_append_only(&self, proof: &Integer, new_state: Self) -> bool {
+    pub fn verify_append_only(&self, proof: &AppendOnlyWitness, new_state: &Self) -> bool {
         let expected = self
             .value
             .clone()
@@ -150,6 +152,16 @@ impl RsaAccumulator {
             .pow_mod_mut(&member, &MODULUS)
             .expect("member should be >=0");
         self.multiset.insert(member);
+    }
+
+    #[must_use]
+    pub fn prove_append_only_from_vec(&self, other: &[Integer]) -> Integer {
+        let mut prod: Integer = 1.into();
+        // TODO: convert other into a multiset
+        for elem in other {
+            prod *= Integer::from(elem);
+        }
+        prod
     }
 
     #[must_use]

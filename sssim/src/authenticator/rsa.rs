@@ -1,9 +1,10 @@
-use std::num::NonZeroU64;
+use std::{collections::HashMap, num::NonZeroU64};
 
 use crate::{
     hash_to_prime::division_intractable_hash,
-    rsa_accumulator::{RsaAccumulator, RsaAccumulatorDigest, Witness, MODULUS},
+    rsa_accumulator::{AppendOnlyWitness, RsaAccumulator, RsaAccumulatorDigest, Witness, MODULUS},
 };
+use rug::Integer;
 use serde::Serialize;
 
 use authenticator::{ClientSnapshot, Revision};
@@ -23,7 +24,7 @@ impl Snapshot {
 
 impl ClientSnapshot for Snapshot {
     type Id = RsaAccumulatorDigest;
-    type Diff = Self;
+    type Diff = (Self, AppendOnlyWitness);
     type Proof = Witness;
 
     fn id(&self) -> Self::Id {
@@ -31,12 +32,14 @@ impl ClientSnapshot for Snapshot {
     }
 
     fn update(&mut self, diff: Self::Diff) {
-        self.rsa_state = diff.rsa_state;
+        let (new_snapshot, _) = diff;
+        self.rsa_state = new_snapshot.rsa_state;
     }
 
-    fn check_no_rollback(&self, _diff: &Self::Diff) -> bool {
-        //done by auditors
-        true
+    fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
+        let (new_snapshot, proof) = diff;
+        self.rsa_state
+            .verify_append_only(proof, &new_snapshot.rsa_state)
     }
 
     fn verify_membership(
@@ -57,9 +60,29 @@ impl ClientSnapshot for Snapshot {
     }
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Authenticator {
     rsa_acc: RsaAccumulator,
+    log: Vec<Integer>,
+    old_acc_idxs: HashMap<RsaAccumulatorDigest, usize>, // TODO: consider giving this usize to the client in this snapshot
+}
+
+impl Authenticator {
+    fn new(rsa_acc: RsaAccumulator) -> Self {
+        let mut old_acc_idxs: HashMap<RsaAccumulatorDigest, usize> = Default::default();
+        old_acc_idxs.insert(rsa_acc.digest().clone(), 0);
+        Authenticator {
+            rsa_acc,
+            log: vec![],
+            old_acc_idxs,
+        }
+    }
+}
+
+impl Default for Authenticator {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
 }
 
 #[allow(unused_variables)]
@@ -71,13 +94,26 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         if &snapshot_id == self.rsa_acc.digest() {
             return None;
         }
-        Some(Snapshot::new(self.rsa_acc.digest().clone()))
+        let new_snapshot = Snapshot::new(self.rsa_acc.digest().clone());
+        let old_rsa_acc_idx = match self.old_acc_idxs.get(&snapshot_id) {
+            Some(o) => o,
+            None => {
+                return None;
+            }
+        };
+        let proof = self
+            .rsa_acc
+            .prove_append_only_from_vec(&self.log[(*old_rsa_acc_idx + 1)..]);
+        Some((new_snapshot, proof))
     }
 
     fn publish(&mut self, package: PackageId) -> () {
         let encoded = bincode::serialize(&package).unwrap();
         let prime = division_intractable_hash(&encoded, &MODULUS);
-        self.rsa_acc.increment(prime);
+        self.rsa_acc.increment(prime.clone());
+        self.old_acc_idxs
+            .insert(self.rsa_acc.digest().clone(), self.log.len());
+        self.log.push(prime);
     }
 
     fn request_file(
