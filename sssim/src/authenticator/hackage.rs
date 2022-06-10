@@ -15,7 +15,8 @@ use crate::{
 #[derive(Default, Debug)]
 pub struct Snapshot {
     package_revisions: HashMap<PackageId, Revision>,
-    hwm: usize,
+    /// How far into the log has this client read?
+    high_water_mark: usize,
 }
 
 impl ClientSnapshot for Snapshot {
@@ -24,11 +25,11 @@ impl ClientSnapshot for Snapshot {
     type Proof = ();
 
     fn id(&self) -> Self::Id {
-        self.hwm
+        self.high_water_mark
     }
 
     fn update(&mut self, diff: Self::Diff) {
-        self.hwm += diff.len();
+        self.high_water_mark += diff.len();
         for (package_id, new_revision) in diff.into_iter() {
             self.package_revisions.insert(package_id, new_revision);
         }
