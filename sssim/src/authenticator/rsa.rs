@@ -1,8 +1,8 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
 use crate::{
+    accumulator::{Accumulator, Digest},
     hash_to_prime::division_intractable_hash,
-    rsa_accumulator::{AppendOnlyWitness, RsaAccumulator, RsaAccumulatorDigest, Witness, MODULUS},
 };
 use rug::Integer;
 use serde::Serialize;
@@ -12,20 +12,25 @@ use authenticator::{ClientSnapshot, Revision};
 use crate::{authenticator, log::PackageId};
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub struct Snapshot {
-    rsa_state: RsaAccumulatorDigest,
+pub struct Snapshot<D: Digest> {
+    rsa_state: D, // TODO: s/rsa//
 }
 
-impl Snapshot {
-    pub fn new(rsa_state: RsaAccumulatorDigest) -> Self {
+impl<D: Digest> Snapshot<D> {
+    pub fn new(rsa_state: D) -> Self {
         Self { rsa_state }
     }
 }
 
-impl ClientSnapshot for Snapshot {
-    type Id = RsaAccumulatorDigest;
-    type Diff = (Self, AppendOnlyWitness);
-    type Proof = Witness;
+impl<D> ClientSnapshot for Snapshot<D>
+where
+    D: Digest + Clone + Serialize,
+    <D as Digest>::AppendOnlyWitness: Clone + Serialize,
+    <D as Digest>::Witness: Clone + Serialize,
+{
+    type Id = D;
+    type Diff = (Self, D::AppendOnlyWitness);
+    type Proof = D::Witness;
 
     fn id(&self) -> Self::Id {
         self.rsa_state.clone()
@@ -49,7 +54,7 @@ impl ClientSnapshot for Snapshot {
         proof: Self::Proof,
     ) -> bool {
         let encoded = bincode::serialize(package_id).unwrap();
-        let prime = division_intractable_hash(&encoded, &MODULUS);
+        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS); // TODO
         if !self
             .rsa_state
             .verify(&prime, revision.0.get().try_into().unwrap(), proof)
@@ -61,15 +66,30 @@ impl ClientSnapshot for Snapshot {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Authenticator {
-    rsa_acc: RsaAccumulator,
+pub struct Authenticator<A>
+where
+    A: Accumulator,
+    <A as Accumulator>::Digest: std::fmt::Debug + Serialize + Eq + PartialEq + std::hash::Hash,
+{
+    rsa_acc: A,
     log: Vec<Integer>,
-    old_acc_idxs: HashMap<RsaAccumulatorDigest, usize>, // TODO: consider giving this usize to the client in this snapshot
+    old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize>, // TODO: consider giving this usize to the client in this snapshot
 }
 
-impl Authenticator {
-    fn new(rsa_acc: RsaAccumulator) -> Self {
-        let mut old_acc_idxs: HashMap<RsaAccumulatorDigest, usize> = Default::default();
+impl<A> Authenticator<A>
+where
+    A: Accumulator,
+    <A as Accumulator>::Digest: std::hash::Hash
+        + Eq
+        + Clone
+        + std::fmt::Debug
+        + Serialize
+        + Eq
+        + PartialEq
+        + std::hash::Hash,
+{
+    fn new(rsa_acc: A) -> Self {
+        let mut old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize> = Default::default();
         old_acc_idxs.insert(rsa_acc.digest().clone(), 0);
         Authenticator {
             rsa_acc,
@@ -79,18 +99,36 @@ impl Authenticator {
     }
 }
 
-impl Default for Authenticator {
+impl<A> Default for Authenticator<A>
+where
+    A: Accumulator + Default,
+    <A as Accumulator>::Digest: std::hash::Hash
+        + Eq
+        + Clone
+        + std::fmt::Debug
+        + Serialize
+        + Eq
+        + PartialEq
+        + std::hash::Hash,
+{
     fn default() -> Self {
         Self::new(Default::default())
     }
 }
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl<A> authenticator::Authenticator<Snapshot<A::Digest>> for Authenticator<A>
+where
+    A: Accumulator + Serialize,
+    <A as Accumulator>::Digest:
+        Clone + Serialize + PartialEq + Eq + std::hash::Hash + std::fmt::Debug,
+    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize,
+{
     fn refresh_metadata(
         &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
+        snapshot_id: <Snapshot<A::Digest> as ClientSnapshot>::Id,
+    ) -> Option<<Snapshot<A::Digest> as ClientSnapshot>::Diff> {
         if &snapshot_id == self.rsa_acc.digest() {
             return None;
         }
@@ -109,7 +147,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn publish(&mut self, package: PackageId) -> () {
         let encoded = bincode::serialize(&package).unwrap();
-        let prime = division_intractable_hash(&encoded, &MODULUS);
+        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
         self.rsa_acc.increment(prime.clone());
         self.old_acc_idxs
             .insert(self.rsa_acc.digest().clone(), self.log.len());
@@ -118,11 +156,11 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn request_file(
         &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        snapshot_id: <Snapshot<A::Digest> as ClientSnapshot>::Id,
         package: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+    ) -> (Revision, <Snapshot<A::Digest> as ClientSnapshot>::Proof) {
         let encoded = bincode::serialize(package).unwrap();
-        let prime = division_intractable_hash(&encoded, &MODULUS);
+        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
 
         let revision = self.rsa_acc.get(&prime);
         let proof = self.rsa_acc.prove(&prime, revision).expect("proof failed");

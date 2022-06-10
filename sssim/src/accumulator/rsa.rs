@@ -3,6 +3,8 @@ use lazy_static::lazy_static;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
 
+use crate::accumulator::{Accumulator, Digest};
+
 // RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
 // TODO generate a new modulus
 lazy_static! {
@@ -71,29 +73,7 @@ impl Witness {
     }
 }
 
-pub type AppendOnlyWitness = Integer;
-
 impl RsaAccumulatorDigest {
-    #[must_use]
-    pub fn verify(&self, member: &Integer, revision: u32, witness: Witness) -> bool {
-        // member@revision is valid IF
-        // (a) member@revision is in the set and
-        // (b) member is NOT in the set corresponding to the membership proof for (a)
-
-        match witness.member {
-            Some(mem_pf) => {
-                self.verify_member(member, revision, mem_pf.clone())
-                    && RsaAccumulatorDigest::from(mem_pf.0)
-                        .verify_nonmember(member, witness.nonmember)
-            }
-            None => {
-                // Special-case: revision = 0 has no membership proof.
-                revision == 0 && self.verify_nonmember(member, witness.nonmember)
-            }
-        }
-    }
-
-    #[must_use]
     fn verify_member(&self, member: &Integer, revision: u32, witness: MembershipWitness) -> bool {
         let exponent = member.pow(&revision.into());
         witness
@@ -121,9 +101,33 @@ impl RsaAccumulatorDigest {
             .expect("Non negative value");
         (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone()
     }
+}
+
+impl Digest for RsaAccumulatorDigest {
+    type Witness = Witness;
+    type AppendOnlyWitness = Integer;
 
     #[must_use]
-    pub fn verify_append_only(&self, proof: &AppendOnlyWitness, new_state: &Self) -> bool {
+    fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
+        // member@revision is valid IF
+        // (a) member@revision is in the set and
+        // (b) member is NOT in the set corresponding to the membership proof for (a)
+
+        match witness.member {
+            Some(mem_pf) => {
+                self.verify_member(member, revision, mem_pf.clone())
+                    && RsaAccumulatorDigest::from(mem_pf.0)
+                        .verify_nonmember(member, witness.nonmember)
+            }
+            None => {
+                // Special-case: revision = 0 has no membership proof.
+                revision == 0 && self.verify_nonmember(member, witness.nonmember)
+            }
+        }
+    }
+
+    #[must_use]
+    fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
         let expected = self
             .value
             .clone()
@@ -140,64 +144,6 @@ pub struct RsaAccumulator {
 }
 
 impl RsaAccumulator {
-    #[must_use]
-    pub fn digest(&self) -> &RsaAccumulatorDigest {
-        &self.digest
-    }
-
-    pub fn increment(&mut self, member: Integer) {
-        assert!(member >= 0);
-        self.digest
-            .value
-            .pow_mod_mut(&member, &MODULUS)
-            .expect("member should be >=0");
-        self.multiset.insert(member);
-    }
-
-    #[must_use]
-    pub fn prove_append_only_from_vec(&self, other: &[Integer]) -> Integer {
-        let mut prod: Integer = 1.into();
-        // TODO: convert other into a multiset
-        for elem in other {
-            prod *= Integer::from(elem);
-        }
-        prod
-    }
-
-    #[must_use]
-    pub fn prove_append_only(&self, other: &Self) -> Integer {
-        assert!(self.multiset.is_superset(&other.multiset));
-        let mut prod: Integer = 1.into();
-        // TODO: not this
-        for (elem, count) in self.multiset.difference(&other.multiset) {
-            prod *= Integer::from(elem.pow(count));
-        }
-        prod
-    }
-
-    pub fn prove(&self, member: &Integer, revision: u32) -> Option<Witness> {
-        if revision == 0 {
-            return self.prove_nonmember(member).map(Witness::for_zero);
-        }
-        self.prove_member(member, revision).and_then(|mem_pf| {
-            // TODO: more efficiently/better
-            let mut ms = self.multiset.clone();
-            for _ in 0..revision {
-                ms.remove(member);
-            }
-            let acc = RsaAccumulator {
-                digest: RsaAccumulatorDigest::from(mem_pf.0.clone()),
-                multiset: ms,
-            };
-            acc.prove_nonmember(member)
-                .map(|nonmem_pf| Witness::new(mem_pf, nonmem_pf))
-        })
-    }
-
-    pub fn get(&self, member: &Integer) -> u32 {
-        self.multiset.get(member)
-    }
-
     //TODO compute all proofs?
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
@@ -242,6 +188,67 @@ impl RsaAccumulator {
             exp: s,
             base: x.pow_mod(&t, &MODULUS).unwrap(),
         })
+    }
+}
+
+impl Accumulator for RsaAccumulator {
+    type Digest = RsaAccumulatorDigest;
+    #[must_use]
+    fn digest(&self) -> &RsaAccumulatorDigest {
+        &self.digest
+    }
+
+    fn increment(&mut self, member: Integer) {
+        assert!(member >= 0);
+        self.digest
+            .value
+            .pow_mod_mut(&member, &MODULUS)
+            .expect("member should be >=0");
+        self.multiset.insert(member);
+    }
+
+    #[must_use]
+    fn prove_append_only_from_vec(&self, other: &[Integer]) -> Integer {
+        let mut prod: Integer = 1.into();
+        // TODO: convert other into a multiset
+        for elem in other {
+            prod *= Integer::from(elem);
+        }
+        prod
+    }
+
+    #[must_use]
+    fn prove_append_only(&self, other: &Self) -> Integer {
+        assert!(self.multiset.is_superset(&other.multiset));
+        let mut prod: Integer = 1.into();
+        // TODO: not this
+        for (elem, count) in self.multiset.difference(&other.multiset) {
+            prod *= Integer::from(elem.pow(count));
+        }
+        prod
+    }
+
+    fn prove(&self, member: &Integer, revision: u32) -> Option<Witness> {
+        if revision == 0 {
+            return self.prove_nonmember(member).map(Witness::for_zero);
+        }
+        self.prove_member(member, revision).and_then(|mem_pf| {
+            // TODO: more efficiently/better
+            let mut ms = self.multiset.clone();
+            for _ in 0..revision {
+                ms.remove(member);
+            }
+            let acc = RsaAccumulator {
+                digest: RsaAccumulatorDigest::from(mem_pf.0.clone()),
+                multiset: ms,
+            };
+            acc.prove_nonmember(member)
+                .map(|nonmem_pf| Witness::new(mem_pf, nonmem_pf))
+        })
+    }
+
+    fn get(&self, member: &Integer) -> u32 {
+        self.multiset.get(member)
     }
 }
 
