@@ -1,0 +1,2 @@
+{"action": {"Publish": {"package": {"id": "openssl"}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}
+{"action": {"Publish": {"package": {"id": "libc"}}}, "timestamp": "1970-01-01 00:00:00.0 +0000"}

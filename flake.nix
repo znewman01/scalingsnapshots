@@ -114,7 +114,9 @@
             # Try running the entire pipeline
             cat ${data}/fakedata.json \
                 | sslogs identity \
-                | sssim \
+                > $out/events.json
+
+            sssim --events-path $out/events.json --init-path ${data}/fakedata-initial.json \
                 | ssanalyze --non-sensitive-data --output $out/
           '';
         };
