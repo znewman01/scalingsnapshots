@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 
 use clap::Parser;
 use serde::Serialize;
@@ -21,6 +22,12 @@ struct Args {
     /// Path to the file containing the initial package state.
     #[clap(long)]
     init_path: String,
+    /// Path to a file containing the configurations for authenticators to run.
+    #[clap(long)]
+    authenticator_config_path: Option<String>,
+    /// The directory that output JSON files should be written to.
+    #[clap(long)]
+    output_directory: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,13 +36,14 @@ struct Event {
     result: ResourceUsage,
 }
 
-fn run<S, A, X, Y>(authenticator: A, events: X, init: Y)
+fn run<S, A, X, Y, Z>(authenticator: Box<A>, events: X, init: Y, mut out: Z)
 where
     S: ClientSnapshot + Default + Debug,
     <S as ClientSnapshot>::Diff: Serialize,
     A: Authenticator<S> + Debug,
     X: BufRead,
     Y: BufRead,
+    Z: io::Write,
 {
     let mut simulator = Simulator::new(authenticator);
 
@@ -54,19 +62,36 @@ where
             result: usage,
         };
         let json = serde_json::to_string(&event).unwrap();
-        println!("{}", json);
+        writeln!(out, "{}", json).expect("writing to output stream");
     }
 }
 
 fn main() -> io::Result<()> {
     let args: Args = Args::parse();
 
-    let events = File::open(args.events_path)?;
-    let init = File::open(args.init_path)?;
-    // TODO: should be able to provide a configuration here
-    let authenticator = authenticator::Insecure::default();
+    let authenticator_configs: Vec<String> = match args.authenticator_config_path {
+        Some(path) => Vec::from_iter(
+            BufReader::new(File::open(path)?)
+                .lines()
+                .map(|l| l.expect("Reading configuration file failed.")),
+        ),
+        None => vec!["insecure".to_string()],
+    };
+    let output_directory = args.output_directory.unwrap_or_else(|| ".".to_string());
 
-    run(authenticator, BufReader::new(events), BufReader::new(init));
+    for authenticator_config in authenticator_configs.iter() {
+        let events = BufReader::new(File::open(args.events_path.clone())?);
+        let init = BufReader::new(File::open(args.init_path.clone())?);
+        let authenticator = match authenticator_config.as_str() {
+            "insecure" => Box::new(authenticator::Insecure::default()),
+            _ => {
+                todo!("implement")
+            }
+        };
+        let filename = format!("{}.json", authenticator_config);
+        let out = File::create(Path::new(&output_directory).join(filename))?;
+        run(authenticator, events, init, out);
+    }
 
     Ok(())
 }

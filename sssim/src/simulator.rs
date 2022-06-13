@@ -44,7 +44,7 @@ pub struct ResourceUsage {
 /// TODO: manage TUF repo?
 #[derive(Debug)]
 pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
-    authenticator: A,
+    authenticator: Box<A>,
     snapshots: HashMap<UserId, S>,
     /// Keep track of the length of the latest version of each package, if provided.
     package_lengths: HashMap<PackageId, u64>,
@@ -56,7 +56,7 @@ where
     S: Default,
     S::Diff: Serialize,
 {
-    pub fn new(authenticator: A) -> Self {
+    pub fn new(authenticator: Box<A>) -> Self {
         Self {
             authenticator,
             snapshots: HashMap::default(),
