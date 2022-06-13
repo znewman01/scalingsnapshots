@@ -1,9 +1,42 @@
 use std::collections::HashMap;
 
 use rug::Integer;
-use serde::Serialize;
+use serde::{ser::SerializeMap, Serialize};
 
 use crate::accumulator::{Accumulator, Digest};
+
+#[derive(Default, Debug, Clone)]
+struct Cache<A>
+where
+    A: Accumulator + Serialize,
+    <A as Accumulator>::Digest:
+        Eq + PartialEq + std::hash::Hash + std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
+{
+    inner: HashMap<
+        (<A as Accumulator>::Digest, Integer, u32),
+        Option<<<A as Accumulator>::Digest as Digest>::Witness>,
+    >,
+}
+
+impl<A> Serialize for Cache<A>
+where
+    A: Accumulator + Serialize,
+    <A as Accumulator>::Digest:
+        Eq + PartialEq + std::hash::Hash + std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.inner.len()))?;
+        for (k, v) in &self.inner {
+            map.serialize_entry(&format!("{:?}:{}:{}", k.0, k.1, k.2), v)?;
+        }
+        map.end()
+    }
+}
 
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct CachingAccumulator<A>
@@ -14,10 +47,7 @@ where
     <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
 {
     acc: A,
-    cache: HashMap<
-        (<A as Accumulator>::Digest, Integer, u32),
-        Option<<<A as Accumulator>::Digest as Digest>::Witness>,
-    >,
+    cache: Cache<A>,
 }
 
 impl<A> Accumulator for CachingAccumulator<A>
@@ -58,12 +88,13 @@ where
     ) -> Option<<<Self as Accumulator>::Digest as Digest>::Witness> {
         match self
             .cache
+            .inner
             .get(&(self.digest().clone(), member.clone(), revision))
         {
             Some(w) => w.clone(),
             None => {
-                let witness = self.prove(member, revision);
-                self.cache.insert(
+                let witness = self.acc.prove(member, revision);
+                self.cache.inner.insert(
                     (self.digest().clone(), member.clone(), revision),
                     witness.clone(),
                 );

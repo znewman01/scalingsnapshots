@@ -24,9 +24,18 @@ lazy_static! {
     static ref GENERATOR: Integer = Integer::from(65537);
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RsaAccumulatorDigest {
     value: Integer,
+}
+
+impl Serialize for RsaAccumulatorDigest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}", self.value.to_string()))
+    }
 }
 
 impl Default for RsaAccumulatorDigest {
@@ -42,16 +51,16 @@ impl From<Integer> for RsaAccumulatorDigest {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 struct MembershipWitness(Integer);
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 struct NonMembershipWitness {
     exp: Integer,
     base: Integer,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Debug)]
 pub struct Witness {
     member: Option<MembershipWitness>,
     nonmember: NonMembershipWitness,

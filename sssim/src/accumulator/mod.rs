@@ -3,6 +3,10 @@ use rug::Integer;
 pub mod rsa;
 pub mod rsa_optimized; // todo: rename to caching
 
+pub use rsa_optimized::CachingAccumulator;
+
+pub use rsa::{RsaAccumulator, RsaAccumulatorDigest};
+
 pub trait Digest {
     type Witness;
     type AppendOnlyWitness;

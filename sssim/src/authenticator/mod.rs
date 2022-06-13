@@ -8,7 +8,13 @@ mod rsa;
 mod vanilla_tuf;
 use std::num::NonZeroU64;
 
+pub use hackage::Authenticator as Hackage;
 pub use insecure::Authenticator as Insecure;
+pub use mercury_diff::Authenticator as MercuryDiff;
+pub use mercury_hash::Authenticator as MercuryHash;
+pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
+pub use merkle::Authenticator as Merkle;
+pub use rsa::Authenticator as Accumulator;
 use serde::Serialize;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 

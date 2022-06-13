@@ -100,10 +100,11 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             packages: HashMap::new(),
         };
         for (package_id, metadata) in &self.snapshot.packages {
-            if prev_snapshot.packages[package_id].revision != metadata.revision {
-                if let Some(mut diff_metadata) = diff.packages.get_mut(package_id) {
-                    diff_metadata.revision.0 = metadata.revision.0;
-                } else {
+            match prev_snapshot.packages.get(package_id) {
+                Some(m) if m.revision == metadata.revision => {
+                    // do nothing; package was already up-to-date in the previous snapshot
+                }
+                _ => {
                     diff.packages.insert(package_id.clone(), *metadata);
                 }
             }

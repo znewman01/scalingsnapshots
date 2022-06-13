@@ -141,7 +141,7 @@ where
         };
         let proof = self
             .rsa_acc
-            .prove_append_only_from_vec(&self.log[(*old_rsa_acc_idx + 1)..]);
+            .prove_append_only_from_vec(&self.log[*old_rsa_acc_idx..]);
         Some((new_snapshot, proof))
     }
 

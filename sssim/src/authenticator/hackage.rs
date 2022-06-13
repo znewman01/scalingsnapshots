@@ -71,13 +71,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,
     ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        let diff_len = match snapshot_id.checked_sub(self.log.len()) {
+        let diff_len = match self.log.len().checked_sub(snapshot_id) {
             Some(len) => len,
             None => return None, // snapshot_id is in the future!
         };
 
-        let mut diff = Vec::with_capacity(diff_len);
-        diff.clone_from_slice(&self.log[snapshot_id..]);
+        let mut diff = Vec::new();
+        diff.extend_from_slice(&self.log[snapshot_id..]);
         Some(diff)
     }
 

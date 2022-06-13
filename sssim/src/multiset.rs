@@ -2,11 +2,25 @@
 
 use std::{collections::HashMap, hash::Hash};
 
-use serde::Serialize;
+use rug::Integer;
+use serde::{ser::SerializeMap, Serialize};
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
     inner: HashMap<T, u32>,
+}
+
+impl Serialize for MultiSet<Integer> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.inner.len()))?;
+        for (k, v) in &self.inner {
+            map.serialize_entry(&k.to_string(), v)?;
+        }
+        map.end()
+    }
 }
 
 impl<T: Hash + Eq> MultiSet<T> {

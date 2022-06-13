@@ -11,7 +11,7 @@ use serde::Serialize;
 use sssim::authenticator::ClientSnapshot;
 use sssim::log::Entry;
 use sssim::simulator::{ResourceUsage, Simulator};
-use sssim::{authenticator, Authenticator};
+use sssim::{accumulator, authenticator, Authenticator};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -36,7 +36,7 @@ struct Event {
     result: ResourceUsage,
 }
 
-fn run<S, A, X, Y, Z>(authenticator: Box<A>, events: X, init: Y, mut out: Z)
+fn run<S, A, X, Y, Z>(authenticator: A, events: X, init: Y, mut out: Z)
 where
     S: ClientSnapshot + Default + Debug,
     <S as ClientSnapshot>::Diff: Serialize,
@@ -75,22 +75,52 @@ fn main() -> io::Result<()> {
                 .lines()
                 .map(|l| l.expect("Reading configuration file failed.")),
         ),
-        None => vec!["insecure".to_string()],
+        None => vec![
+            "insecure".to_string(),
+            "hackage".to_string(),
+            "mercury_diff".to_string(),
+            "mercury_hash".to_string(),
+            "mercury_hash_diff".to_string(),
+            "merkle".to_string(),
+            "rsa".to_string(),
+            "rsa_cached".to_string(),
+            "vanilla_tuf".to_string(),
+        ],
     };
     let output_directory = args.output_directory.unwrap_or_else(|| ".".to_string());
 
     for authenticator_config in authenticator_configs.iter() {
         let events = BufReader::new(File::open(args.events_path.clone())?);
         let init = BufReader::new(File::open(args.init_path.clone())?);
-        let authenticator = match authenticator_config.as_str() {
-            "insecure" => Box::new(authenticator::Insecure::default()),
-            _ => {
-                todo!("implement")
-            }
-        };
         let filename = format!("{}.json", authenticator_config);
         let out = File::create(Path::new(&output_directory).join(filename))?;
-        run(authenticator, events, init, out);
+        println!("authenticator: {}", authenticator_config);
+        match authenticator_config.as_str() {
+            "insecure" => run(authenticator::Insecure::default(), events, init, out),
+            "hackage" => run(authenticator::Hackage::default(), events, init, out),
+            "mercury_diff" => run(authenticator::MercuryDiff::default(), events, init, out),
+            "mercury_hash" => run(authenticator::MercuryHash::default(), events, init, out),
+            "mercury_hash_diff" => {
+                run(authenticator::MercuryHashDiff::default(), events, init, out)
+            }
+            "merkle" => run(authenticator::Merkle::default(), events, init, out),
+            "rsa" => run(
+                authenticator::Accumulator::<accumulator::rsa::RsaAccumulator>::default(),
+                events,
+                init,
+                out,
+            ),
+            "rsa_cached" => run(
+                authenticator::Accumulator::<
+                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>,
+                >::default(),
+                events,
+                init,
+                out,
+            ),
+            "vanilla_tuf" => run(authenticator::VanillaTuf::default(), events, init, out),
+            _ => panic!("not valid"),
+        };
     }
 
     Ok(())

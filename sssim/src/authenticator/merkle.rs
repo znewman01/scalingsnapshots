@@ -98,10 +98,20 @@ impl ClientSnapshot for Snapshot {
 }
 
 /// An authenticator as-in vanilla TUF.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Authenticator {
     tree: SparseMerkleTree<Node>,
     revisions: HashMap<PackageId, Revision>,
+}
+
+impl Default for Authenticator {
+    fn default() -> Self {
+        Self {
+            // SparseMerkleTree::default gives it a height of 0!!
+            tree: SparseMerkleTree::new(TREE_HEIGHT),
+            revisions: Default::default(),
+        }
+    }
 }
 
 #[allow(unused_variables)]
