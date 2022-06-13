@@ -7,6 +7,7 @@ Must set environment variable $GOOGLE_APPLICATION_CREDENTIALS to point to a
 BigQuery.
 """
 import argparse
+import io
 
 from typing import Any
 from google.cloud import bigquery
