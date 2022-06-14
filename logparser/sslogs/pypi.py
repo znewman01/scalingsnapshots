@@ -8,11 +8,14 @@ BigQuery.
 """
 import argparse
 import io
+import json
+import base64
 
 from typing import Any
 from google.cloud import bigquery
 
 import sslogs.args
+import sslogs.logs
 
 # https://packaging.python.org/guides/analyzing-pypi-package-downloads/
 # Table: bigquery-public-data.pypi.file_downloads
@@ -20,15 +23,62 @@ import sslogs.args
 # - timestamp, country_code, url, project, tls_protocol, tls_cipher
 # - file.*: filename, project, version, type
 # - details.*: installer.*, python, implementation.*, distro.*, system.*, details.cpu, details.openssl_version, details.setuptools_version
-_QUERY = "SELECT 1"
+_QUERY = """
+SELECT timestamp, MD5(CONCAT(TO_JSON_STRING(country_code), TO_JSON_STRING(details), tls_protocol, tls_cipher)), project FROM bigquery-public-data.pypi.file_downloads
+         WHERE timestamp BETWEEN TIMESTAMP("2021-10-18 10:10:00+00") AND TIMESTAMP("2021-10-18 10:20:00+00")
+         ORDER BY timestamp
+         LIMIT 20
+"""
+
+_QUERY_UPLOAD = """
+SELECT MIN(upload_time), name FROM bigquery-public-data.pypi.distribution_metadata
+         WHERE upload_time BETWEEN TIMESTAMP("2021-10-18 10:10:00+00") AND TIMESTAMP("2021-10-18 10:20:00+00")
+         GROUP BY name, version
+         ORDER BY MIN(upload_time)
+         LIMIT 20
+"""
 
 
 def main(args: argparse.Namespace):
+    # TODO initial output
+    # initial_output: io.TextIOBase = args.initial_output
     output: io.TextIOBase = args.output
     client = bigquery.Client()
-    job = client.query(_QUERY)
-    for row in job.result():
-        output.write(f"{row}\n")
+    download_job = iter(client.query(_QUERY))
+    upload_job = iter(client.query(_QUERY_UPLOAD))
+    next_upload = next(upload_job)
+    next_download = next(download_job)
+
+    # merge-sort ish to do in timestamp order
+    while True:
+        if next_download is None and next_upload is None:
+            break
+        if next_upload is None or (next_download and next_download[0] < next_upload[0]):
+            user = base64.b64encode(next_download[1]).decode("ascii")
+            entry = sslogs.logs.LogEntry(
+                timestamp=next_download[0],
+                action=sslogs.logs.Download(
+                    user=user, package=sslogs.logs.Package(id=next_download[2])
+                ),
+            )
+            try:
+                next_download = next(download_job)
+            except StopIteration:
+                next_download = None
+        else:
+            entry = sslogs.logs.LogEntry(
+                timestamp=next_upload[0],
+                action=sslogs.logs.Publish(
+                    package=sslogs.logs.Package(id=next_upload[1])
+                ),
+            )
+            try:
+                next_upload = next(upload_job)
+            except StopIteration:
+                next_upload = None
+        print(entry)
+        output.write(json.dumps(entry.to_dict()) + "\n")
+
 
 
 def add_args(parser: Any):
