@@ -136,7 +136,7 @@ where
         let old_rsa_acc_idx = match self.old_acc_idxs.get(&snapshot_id) {
             Some(o) => o,
             None => {
-                return None;
+                panic!("missing accumulator index");
             }
         };
         let proof = self
@@ -149,9 +149,9 @@ where
         let encoded = bincode::serialize(&package).unwrap();
         let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
         self.rsa_acc.increment(prime.clone());
+        self.log.push(prime);
         self.old_acc_idxs
             .insert(self.rsa_acc.digest().clone(), self.log.len());
-        self.log.push(prime);
     }
 
     fn request_file(
