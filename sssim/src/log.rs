@@ -68,7 +68,7 @@ pub enum Action {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Entry {
     #[serde(with = "simple_dt_8601")]
-    timestamp: OffsetDateTime,
+    pub timestamp: OffsetDateTime,
     pub action: Action,
 }
 

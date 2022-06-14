@@ -9,7 +9,7 @@ use clap::Parser;
 use serde::Serialize;
 
 use sssim::authenticator::ClientSnapshot;
-use sssim::log::Entry;
+use sssim::log::{Action, Entry};
 use sssim::simulator::{ResourceUsage, Simulator};
 use sssim::{accumulator, authenticator, Authenticator};
 
@@ -56,6 +56,17 @@ where
     for line in events.lines() {
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let mut entry: Entry = result.expect("bad log entry");
+        if let Action::Download { user, .. } = entry.action.clone() {
+            let refresh_metadata = Action::RefreshMetadata { user };
+            let mut inner_entry: Entry = Entry::new(entry.timestamp, refresh_metadata);
+            let refresh_usage = simulator.process(&mut inner_entry.action);
+            let event = Event {
+                entry: inner_entry,
+                result: refresh_usage,
+            };
+            let json = serde_json::to_string(&event).unwrap();
+            writeln!(out, "{}", json).expect("writing to output stream");
+        }
         let usage = simulator.process(&mut entry.action);
         let event = Event {
             entry,
