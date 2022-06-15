@@ -17,6 +17,8 @@ from google.cloud import bigquery
 import sslogs.args
 import sslogs.logs
 
+import datetime
+
 # https://packaging.python.org/guides/analyzing-pypi-package-downloads/
 # Table: bigquery-public-data.pypi.file_downloads
 # Columns:
@@ -38,12 +40,30 @@ SELECT MIN(upload_time), name FROM bigquery-public-data.pypi.distribution_metada
          LIMIT 20
 """
 
+_QUERY_INITIAL = """
+SELECT name FROM bigquery-public-data.pypi.distribution_metadata
+        WHERE upload_time < TIMESTAMP("2021-10-18 10:10:00+00")
+        GROUP BY name
+"""
+
 
 def main(args: argparse.Namespace):
-    # TODO initial output
-    # initial_output: io.TextIOBase = args.initial_output
+    initial_output: io.TextIOBase = args.initial_output
     output: io.TextIOBase = args.output
     client = bigquery.Client()
+
+    # initial output
+    initial_job = client.query(_QUERY_INITIAL)
+    for row in initial_job:
+        row[0]
+        entry = sslogs.logs.LogEntry(
+            timestamp=datetime.datetime(2021, 10, 18, 10, 10, tzinfo=datetime.timezone.utc),
+            action=sslogs.logs.Publish(
+                package=sslogs.logs.Package(row[0])
+            ),
+        )
+        initial_output.write(json.dumps(entry.to_dict()) + "\n")
+
     download_job = iter(client.query(_QUERY))
     upload_job = iter(client.query(_QUERY_UPLOAD))
     next_upload = next(upload_job)

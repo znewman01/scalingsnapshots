@@ -9,6 +9,12 @@ def add_common_args(parser: argparse.ArgumentParser):
         type=argparse.FileType("w"),
         default=sys.stdout,
     )
+    parser.add_argument(
+        "--initial-output",
+        help="The output data file for the initial state to write to",
+        type=argparse.FileType("w"),
+        required=True
+    )
 
 
 def add_input_arg(parser: argparse.ArgumentParser):
