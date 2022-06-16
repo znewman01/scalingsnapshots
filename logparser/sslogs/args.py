@@ -1,6 +1,18 @@
 import argparse
 import sys
+import datetime
 
+def parse_time(t):
+    return datetime.datetime.fromisoformat(t).replace(tzinfo=datetime.timezone.utc)
+
+def parse_duration(d):
+    quantity, unit = d[:-1], d[-1]
+    if unit == 'm':
+        return datetime.timedelta(minutes=int(quantity))
+    elif unit == 'h':
+        return datetime.timedelta(hours=int(quantity))
+    elif unit == 'd':
+        return datetime.timedelta(days=int(quantity))
 
 def add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument(
