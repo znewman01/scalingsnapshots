@@ -5,6 +5,7 @@ use serde::{ser::SerializeMap, Serialize};
 
 use crate::accumulator::{Accumulator, Digest};
 
+// TODO: also rsa precompute
 #[derive(Default, Debug, Clone)]
 struct Cache<A>
 where

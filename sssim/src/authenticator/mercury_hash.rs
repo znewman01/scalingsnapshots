@@ -93,7 +93,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         self.snapshot.id += 1;
         self.snapshot
             .packages
-            .entry(package.clone())
+            .entry(package)
             .and_modify(|m| m.revision.0 = m.revision.0.checked_add(1).unwrap())
             .or_insert_with(Metadata::default);
     }

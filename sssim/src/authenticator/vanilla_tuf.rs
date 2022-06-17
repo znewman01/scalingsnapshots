@@ -20,6 +20,7 @@ use crate::{
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
+    // TODO: wrap packages in smart pointer
     packages: HashMap<PackageId, Revision>,
     id: u64,
 }

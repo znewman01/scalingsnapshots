@@ -1,0 +1,27 @@
+for 5minutes of data (1 / 300th of 24h)
+
+insecure: like 6seconds + SQL overhead
+hackage:
+  upload: fast!
+  download: 1000 per 30s => 16h 40 minutes per 2m
+mercury_diff:
+  upload: 55 seconds per 20K => 15 minutes per 300K
+  download: not patient enough, 2h if avg download is similar to upload
+mercury_hash:
+  upload: very fast
+  download: 25 seconds per 2000 => 7h per 2mil
+mercury_hash_diff:
+  upload: 45 seconds per 17K => about the same as mercury diff
+  download: not patient enough, 2h if avg download is similar to upload
+merkle:
+  upload: 40 seconds per 500 => 7 hours for 300K
+  download: ???
+rsa:
+  upload: 55 seconds per 25K => 11minutes per 300K
+  download: ???
+rsa_cached:
+  upload: 55 seconds per 25K => 11minutes per 300K
+  download: ???
+vanilla_tuf:
+  upload: very fast
+  download: 30 seconds per 3K  => 5.5hrs per 2M

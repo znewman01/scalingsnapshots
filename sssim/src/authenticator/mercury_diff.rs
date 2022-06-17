@@ -118,12 +118,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     }
 
     fn publish(&mut self, package: PackageId) {
+        // TODO: this is slow, consider using log data structure
+        // also consider using immutable map
         self.snapshots
             .insert(self.snapshot.id, self.snapshot.clone());
         let new_snapshot = self.snapshots.get_mut(&self.snapshot.id);
         self.snapshot.id += 1;
-        let entry = self
-            .snapshot
+        self.snapshot
             .packages
             .entry(package)
             .and_modify(|m| m.revision.0 = m.revision.0.checked_add(1).unwrap())
