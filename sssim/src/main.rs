@@ -2,11 +2,13 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter};
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use clap::Parser;
+use rusqlite::{Connection, DatabaseName};
 use serde::Serialize;
+use uom::si::information::byte;
 
 use sssim::authenticator::ClientSnapshot;
 use sssim::log::{Action, Entry};
@@ -36,15 +38,76 @@ struct Event {
     result: ResourceUsage,
 }
 
-fn run<S, A, X, Y, Z>(authenticator: A, events: X, init: Y, mut out: Z)
+const DB_NAME: DatabaseName = DatabaseName::Main;
+
+fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
+    let action = match event.entry.action {
+        Action::RefreshMetadata { .. } => "refresh",
+        Action::Download { .. } => "download",
+        Action::Publish { .. } => "publish",
+    };
+    let user = match event.entry.action {
+        Action::RefreshMetadata { user } => Some(user.0),
+        Action::Download { user, .. } => Some(user.0),
+        Action::Publish { .. } => None,
+    };
+    let server_compute_ns: u64 = event
+        .result
+        .server_compute
+        .whole_nanoseconds()
+        .try_into()
+        .unwrap();
+    let user_compute_ns: u64 = event
+        .result
+        .user_compute
+        .whole_nanoseconds()
+        .try_into()
+        .unwrap();
+    let mut statement = conn.prepare_cached(
+        "
+        INSERT INTO results (
+             timestamp,
+             action,
+             user,
+             server_compute_ns,
+             user_compute_ns,
+             bandwidth_bytes,
+             server_storage_bytes
+             ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 )
+    ",
+    )?;
+    statement.execute(rusqlite::params![
+        event.entry.timestamp.unix_timestamp(),
+        action,
+        user,
+        server_compute_ns,
+        user_compute_ns,
+        event.result.bandwidth.get::<byte>(),
+        event.result.storage.get::<byte>(),
+    ])
+}
+
+fn run<S, A, X, Y>(authenticator: A, events: X, init: Y, out: &Connection) -> rusqlite::Result<()>
 where
     S: ClientSnapshot + Default + Debug,
     <S as ClientSnapshot>::Diff: Serialize,
     A: Authenticator<S> + Debug,
     X: BufRead,
     Y: BufRead,
-    Z: io::Write,
 {
+    out.execute(
+        "CREATE TABLE results (
+                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                 timestamp            INTEGER NOT NULL,
+                 action               TEXT NOT NULL,
+                 user                 TEXT,
+                 server_compute_ns    INTEGER,
+                 user_compute_ns      INTEGER,
+                 bandwidth_bytes      INTEGER,
+                 server_storage_bytes INTEGER
+                 )",
+        [],
+    )?;
     let mut simulator = Simulator::new(authenticator);
 
     for line in init.lines() {
@@ -64,20 +127,16 @@ where
                 entry: inner_entry,
                 result: refresh_usage,
             };
-            let json = serde_json::to_string(&event).unwrap();
-            out.write(json.as_bytes())
-                .expect("writing to output stream");
+            write_sqlite(event, out)?;
         }
         let usage = simulator.process(&mut entry.action);
         let event = Event {
             entry,
             result: usage,
         };
-        let json = serde_json::to_string(&event).unwrap();
-        out.write(json.as_bytes())
-            .expect("writing to output stream");
+        write_sqlite(event, out)?;
     }
-    out.flush().expect("flushing output stream");
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
@@ -106,35 +165,51 @@ fn main() -> io::Result<()> {
     for authenticator_config in authenticator_configs.iter() {
         let events = BufReader::new(File::open(args.events_path.clone())?);
         let init = BufReader::new(File::open(args.init_path.clone())?);
-        let filename = format!("{}.json", authenticator_config);
-        let out = BufWriter::new(File::create(Path::new(&output_directory).join(filename))?);
+        let out_db = Connection::open_in_memory().expect("creating SQLite db");
         println!("authenticator: {}", authenticator_config);
         match authenticator_config.as_str() {
-            "insecure" => run(authenticator::Insecure::default(), events, init, out),
-            "hackage" => run(authenticator::Hackage::default(), events, init, out),
-            "mercury_diff" => run(authenticator::MercuryDiff::default(), events, init, out),
-            "mercury_hash" => run(authenticator::MercuryHash::default(), events, init, out),
-            "mercury_hash_diff" => {
-                run(authenticator::MercuryHashDiff::default(), events, init, out)
+            "insecure" => run(authenticator::Insecure::default(), events, init, &out_db).unwrap(),
+            "hackage" => run(authenticator::Hackage::default(), events, init, &out_db).unwrap(),
+            "mercury_diff" => {
+                run(authenticator::MercuryDiff::default(), events, init, &out_db).unwrap()
             }
-            "merkle" => run(authenticator::Merkle::default(), events, init, out),
+            "mercury_hash" => {
+                run(authenticator::MercuryHash::default(), events, init, &out_db).unwrap()
+            }
+            "mercury_hash_diff" => run(
+                authenticator::MercuryHashDiff::default(),
+                events,
+                init,
+                &out_db,
+            )
+            .unwrap(),
+            "merkle" => run(authenticator::Merkle::default(), events, init, &out_db).unwrap(),
             "rsa" => run(
                 authenticator::Accumulator::<accumulator::rsa::RsaAccumulator>::default(),
                 events,
                 init,
-                out,
-            ),
+                &out_db,
+            )
+            .unwrap(),
             "rsa_cached" => run(
                 authenticator::Accumulator::<
                     accumulator::CachingAccumulator<accumulator::RsaAccumulator>,
                 >::default(),
                 events,
                 init,
-                out,
-            ),
-            "vanilla_tuf" => run(authenticator::VanillaTuf::default(), events, init, out),
+                &out_db,
+            )
+            .unwrap(),
+            "vanilla_tuf" => {
+                run(authenticator::VanillaTuf::default(), events, init, &out_db).unwrap()
+            }
             _ => panic!("not valid"),
         };
+        let filename = format!("{}.sqlite", authenticator_config);
+        let out_path = Path::new(&output_directory).join(filename);
+        out_db
+            .backup(DB_NAME, out_path, None)
+            .expect("backing up db");
     }
 
     Ok(())

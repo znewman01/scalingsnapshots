@@ -26,7 +26,7 @@ format_description!(
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct UserId(String);
+pub struct UserId(pub String);
 
 impl From<String> for UserId {
     fn from(id: String) -> Self {

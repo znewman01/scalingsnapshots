@@ -25,14 +25,14 @@ where
 pub struct ResourceUsage {
     /// Server-side computation time used to handle this request.
     #[serde(rename = "server_compute_ns", serialize_with = "serialize_ns")]
-    server_compute: Duration,
+    pub server_compute: Duration,
     /// Client-side computation time used to handle this request.
     #[serde(rename = "user_compute_ns", serialize_with = "serialize_ns")]
-    user_compute: Duration, // TODO: make optional
+    pub user_compute: Duration, // TODO: make optional
     #[serde(rename = "bandwidth_bytes")]
-    bandwidth: Information,
+    pub bandwidth: Information,
     #[serde(rename = "server_storage_bytes")]
-    storage: Information,
+    pub storage: Information,
 }
 
 /// A simulator for a secure software repository.
