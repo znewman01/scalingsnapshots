@@ -2,7 +2,7 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, BufWriter};
 use std::path::Path;
 
 use clap::Parser;
@@ -65,7 +65,8 @@ where
                 result: refresh_usage,
             };
             let json = serde_json::to_string(&event).unwrap();
-            writeln!(out, "{}", json).expect("writing to output stream");
+            out.write(json.as_bytes())
+                .expect("writing to output stream");
         }
         let usage = simulator.process(&mut entry.action);
         let event = Event {
@@ -73,8 +74,10 @@ where
             result: usage,
         };
         let json = serde_json::to_string(&event).unwrap();
-        writeln!(out, "{}", json).expect("writing to output stream");
+        out.write(json.as_bytes())
+            .expect("writing to output stream");
     }
+    out.flush().expect("flushing output stream");
 }
 
 fn main() -> io::Result<()> {
@@ -104,7 +107,7 @@ fn main() -> io::Result<()> {
         let events = BufReader::new(File::open(args.events_path.clone())?);
         let init = BufReader::new(File::open(args.init_path.clone())?);
         let filename = format!("{}.json", authenticator_config);
-        let out = File::create(Path::new(&output_directory).join(filename))?;
+        let out = BufWriter::new(File::create(Path::new(&output_directory).join(filename))?);
         println!("authenticator: {}", authenticator_config);
         match authenticator_config.as_str() {
             "insecure" => run(authenticator::Insecure::default(), events, init, out),
