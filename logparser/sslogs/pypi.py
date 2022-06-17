@@ -77,6 +77,10 @@ def _query_initial(start):
     return _QUERY_INITIAL.format(start=start.isoformat())
 
 
+def _canonicalize_package(package: str) -> str:
+    return package.replace("_", "-").replace(".", "-").lower()
+
+
 def main(args: argparse.Namespace):
     initial_output: io.TextIOBase = args.initial_output
     output: io.TextIOBase = args.output
@@ -85,12 +89,14 @@ def main(args: argparse.Namespace):
     # initial output
     initial_job = client.query(_query_initial(args.start))
     for row in initial_job:
-        row[0]
-        entry = sslogs.logs.LogEntry(
-            timestamp=args.start,
-            action=sslogs.logs.Publish(package=sslogs.logs.Package(row[0])),
-        )
-        initial_output.write(json.dumps(entry.to_dict()) + "\n")
+        package = row[0]
+        if package is not None:
+            package = _canonicalize_package(package)
+            entry = sslogs.logs.LogEntry(
+                timestamp=args.start,
+                action=sslogs.logs.Publish(package=sslogs.logs.Package(package)),
+            )
+            initial_output.write(json.dumps(entry.to_dict()) + "\n")
 
     download_job = iter(
         client.query(_query_download(args.start, args.duration, args.limit))
@@ -103,32 +109,40 @@ def main(args: argparse.Namespace):
 
     # merge-sort ish to do in timestamp order
     while True:
+        entry = None
         if next_download is None and next_upload is None:
             break
         if next_upload is None or (next_download and next_download[0] < next_upload[0]):
             user = base64.b64encode(next_download[1]).decode("ascii")
-            entry = sslogs.logs.LogEntry(
-                timestamp=next_download[0],
-                action=sslogs.logs.Download(
-                    user=user, package=sslogs.logs.Package(id=next_download[2])
-                ),
-            )
+            package = next_download[2]
+            if package is not None:
+                package = _canonicalize_package(package)
+                entry = sslogs.logs.LogEntry(
+                    timestamp=next_download[0],
+                    action=sslogs.logs.Download(
+                        user=user, package=sslogs.logs.Package(id=package)
+                    ),
+                )
             try:
                 next_download = next(download_job)
             except StopIteration:
                 next_download = None
         else:
-            entry = sslogs.logs.LogEntry(
-                timestamp=next_upload[0],
-                action=sslogs.logs.Publish(
-                    package=sslogs.logs.Package(id=next_upload[1])
-                ),
-            )
+            package = next_upload[1]
+            if package is not None:
+                package = _canonicalize_package(package)
+                entry = sslogs.logs.LogEntry(
+                    timestamp=next_upload[0],
+                    action=sslogs.logs.Publish(
+                        package=sslogs.logs.Package(id=next_upload[1])
+                    ),
+                )
             try:
                 next_upload = next(upload_job)
             except StopIteration:
                 next_upload = None
-        output.write(json.dumps(entry.to_dict()) + "\n")
+        if entry is not None:
+            output.write(json.dumps(entry.to_dict()) + "\n")
 
 
 def add_args(parser: Any):
