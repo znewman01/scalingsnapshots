@@ -38,6 +38,7 @@ struct Event {
     result: ResourceUsage,
 }
 
+const PROGRESS_BAR_INCREMENT: u64 = 100;
 const DB_NAME: DatabaseName = DatabaseName::Main;
 
 fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
@@ -110,13 +111,28 @@ where
     )?;
     let mut simulator = Simulator::new(authenticator);
 
+    let bar = indicatif::ProgressBar::new(362350);
+    let mut count = 0;
+    bar.set_message("Initializing");
     for line in init.lines() {
+        count += 1;
+        if count % PROGRESS_BAR_INCREMENT == 0 {
+            bar.inc(PROGRESS_BAR_INCREMENT);
+        }
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let mut entry: Entry = result.expect("bad log entry");
         simulator.process(&mut entry.action); // ignore resource usage for initialization
     }
+    bar.finish();
 
+    let bar = indicatif::ProgressBar::new(2269238);
+    let mut count = 0;
+    bar.set_message("Simulating");
     for line in events.lines() {
+        count += 1;
+        if count % PROGRESS_BAR_INCREMENT == 0 {
+            bar.inc(PROGRESS_BAR_INCREMENT);
+        }
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let mut entry: Entry = result.expect("bad log entry");
         if let Action::Download { user, .. } = entry.action.clone() {
@@ -136,6 +152,7 @@ where
         };
         write_sqlite(event, out)?;
     }
+    bar.finish();
     Ok(())
 }
 
