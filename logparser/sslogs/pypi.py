@@ -46,24 +46,35 @@ SELECT name FROM bigquery-public-data.pypi.distribution_metadata
         GROUP BY name
 """
 
+
 def _query_download(start, duration, limit):
     if limit:
-        return _QUERY.format(start=start.isoformat(), end=(start + duration).isoformat(), limit=f"LIMIT {limit}")
+        return _QUERY.format(
+            start=start.isoformat(),
+            end=(start + duration).isoformat(),
+            limit=f"LIMIT {limit}",
+        )
     else:
-        return _QUERY.format(start=start.isoformat(), end=(start + duration).isoformat(), limit="")
-    
-    
+        return _QUERY.format(
+            start=start.isoformat(), end=(start + duration).isoformat(), limit=""
+        )
+
 
 def _query_upload(start, duration, limit):
     if limit:
-        return _QUERY_UPLOAD.format(start=start.isoformat(), end=(start + duration).isoformat(), limit=f"LIMIT {limit}")
+        return _QUERY_UPLOAD.format(
+            start=start.isoformat(),
+            end=(start + duration).isoformat(),
+            limit=f"LIMIT {limit}",
+        )
     else:
-        return _QUERY_UPLOAD.format(start=start.isoformat(), end=(start + duration).isoformat(), limit="")
+        return _QUERY_UPLOAD.format(
+            start=start.isoformat(), end=(start + duration).isoformat(), limit=""
+        )
 
 
 def _query_initial(start):
     return _QUERY_INITIAL.format(start=start.isoformat())
-    
 
 
 def main(args: argparse.Namespace):
@@ -77,15 +88,16 @@ def main(args: argparse.Namespace):
         row[0]
         entry = sslogs.logs.LogEntry(
             timestamp=args.start,
-            action=sslogs.logs.Publish(
-                package=sslogs.logs.Package(row[0])
-            ),
+            action=sslogs.logs.Publish(package=sslogs.logs.Package(row[0])),
         )
         initial_output.write(json.dumps(entry.to_dict()) + "\n")
 
-    
-    download_job = iter(client.query(_query_download(args.start, args.duration, args.limit)))
-    upload_job = iter(client.query(_query_upload(args.start, args.duration, args.limit)))
+    download_job = iter(
+        client.query(_query_download(args.start, args.duration, args.limit))
+    )
+    upload_job = iter(
+        client.query(_query_upload(args.start, args.duration, args.limit))
+    )
     next_upload = next(upload_job)
     next_download = next(download_job)
 
@@ -119,7 +131,6 @@ def main(args: argparse.Namespace):
         output.write(json.dumps(entry.to_dict()) + "\n")
 
 
-
 def add_args(parser: Any):
     subparser: argparse.ArgumentParser = parser.add_parser(
         "pypi", help=__doc__.split("\n")[0], description=__doc__
@@ -128,19 +139,16 @@ def add_args(parser: Any):
         "--start",
         help="Start of the query period",
         type=sslogs.args.parse_time,
-        default=datetime.datetime(2021, 10, 18, 10, 10, tzinfo=datetime.timezone.utc)
+        default=datetime.datetime(2021, 10, 18, 10, 10, tzinfo=datetime.timezone.utc),
     )
     subparser.add_argument(
         "--duration",
         help="Duration of the query period (eg 10d)",
         type=sslogs.args.parse_duration,
-        default=datetime.timedelta(minutes=10)
+        default=datetime.timedelta(minutes=10),
     )
     subparser.add_argument(
-        "--limit",
-        help="SQL limit (pass 0 for no limit)",
-        type=int,
-        default=10
+        "--limit", help="SQL limit (pass 0 for no limit)", type=int, default=10
     )
 
     subparser.set_defaults(func=main)
