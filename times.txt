@@ -4,9 +4,11 @@ insecure: like 6seconds + SQL overhead
 hackage:
   upload: fast!
   download: 1000 per 30s => 16h 40 minutes per 2m
+  on m1: upload 8s per 20000 => 2 min per 300K
 mercury_diff:
   upload: 55 seconds per 20K => 15 minutes per 300K
   download: not patient enough, 2h if avg download is similar to upload
+  on m1: upload 19s per 1500 => 1h per 300K
 mercury_hash:
   upload: very fast
   download: 25 seconds per 2000 => 7h per 2mil
