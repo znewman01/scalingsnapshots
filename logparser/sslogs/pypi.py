@@ -88,10 +88,14 @@ def main(args: argparse.Namespace):
 
     # initial output
     initial_job = client.query(_query_initial(args.start))
+    seen = set()
     for row in initial_job:
         package = row[0]
         if package is not None:
             package = _canonicalize_package(package)
+            if package in seen:
+                continue
+            seen.add(package)
             entry = sslogs.logs.LogEntry(
                 timestamp=args.start,
                 action=sslogs.logs.Publish(package=sslogs.logs.Package(package)),
