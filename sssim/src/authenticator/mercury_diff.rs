@@ -98,7 +98,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         snapshots.insert(0, Snapshot::default());
         //snapshots.insert(1, snapshot.clone());
         snapshot.id += 1;
-        Self{snapshots, snapshot}
+        Self {
+            snapshots,
+            snapshot,
+        }
     }
 
     // find the packages that have changed

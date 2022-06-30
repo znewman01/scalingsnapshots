@@ -93,7 +93,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         let mut snapshots = HashMap::<u64, Snapshot>::new();
         snapshots.insert(0, Snapshot::default());
         snapshot.id += 1;
-        Self{snapshots, snapshot}
+        Self {
+            snapshots,
+            snapshot,
+        }
     }
 
     // find the packages that have changed

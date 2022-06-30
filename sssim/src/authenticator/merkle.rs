@@ -127,9 +127,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             nodes.push((idx, node));
         }
         let mut tree = SparseMerkleTree::new(TREE_HEIGHT);
-        nodes.sort_by_key(|(x, _)|*x);
+        nodes.sort_by_key(|(x, _)| *x);
         tree.build(&nodes, &ALL_ZEROS_SECRET);
-        Self{tree, revisions}
+        Self { tree, revisions }
     }
 
     fn refresh_metadata(

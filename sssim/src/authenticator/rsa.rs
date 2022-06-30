@@ -128,7 +128,7 @@ where
     fn batch_import(packages: Vec<PackageId>) -> Self {
         // TODO: implement batch import in the accumulator
         let mut auth = Self::default();
-        for p in packages{
+        for p in packages {
             let encoded = bincode::serialize(&p).unwrap();
             let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
             auth.rsa_acc.increment(prime.clone());

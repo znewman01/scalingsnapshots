@@ -6,7 +6,7 @@ use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use clap::Parser;
-use rusqlite::{Connection, DatabaseName, backup};
+use rusqlite::{backup, Connection, DatabaseName};
 use serde::Serialize;
 use uom::si::information::byte;
 
@@ -122,10 +122,10 @@ where
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let entry: Entry = result.expect("bad log entry");
         match entry.action {
-            Action::Publish {package} =>
-                { to_import.push(package.id);}
-            _ =>
-             panic!("Initialization should only include publish")
+            Action::Publish { package } => {
+                to_import.push(package.id);
+            }
+            _ => panic!("Initialization should only include publish"),
         }
     }
     let auth = A::batch_import(to_import);
@@ -166,7 +166,7 @@ where
 fn pg(p: backup::Progress) {
     println!("{}", p.pagecount);
     println!("{}", p.remaining);
-    return
+    return;
 }
 
 fn main() -> io::Result<()> {
@@ -206,29 +206,25 @@ fn main() -> io::Result<()> {
             "mercury_hash" => {
                 run::<_, authenticator::MercuryHash, _, _>(events, init, &out_db).unwrap()
             }
-            "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff, _, _>(
-                events,
-                init,
-                &out_db,
+            "mercury_hash_diff" => {
+                run::<_, authenticator::MercuryHashDiff, _, _>(events, init, &out_db).unwrap()
+            }
+            "merkle" => run::<_, authenticator::Merkle, _, _>(events, init, &out_db).unwrap(),
+            "rsa" => run::<_, authenticator::Accumulator<accumulator::rsa::RsaAccumulator>, _, _>(
+                events, init, &out_db,
             )
             .unwrap(),
-            "merkle" => run::<_,authenticator::Merkle,_,_>(events, init, &out_db).unwrap(),
-            "rsa" => run::<_,authenticator::Accumulator::<accumulator::rsa::RsaAccumulator>,_,_>(
-                events,
-                init,
-                &out_db,
-            )
-            .unwrap(),
-            "rsa_cached" => run::<_,authenticator::Accumulator::<
-                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>
-                >,_,_>(
-                events,
-                init,
-                &out_db,
-            )
+            "rsa_cached" => run::<
+                _,
+                authenticator::Accumulator<
+                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>,
+                >,
+                _,
+                _,
+            >(events, init, &out_db)
             .unwrap(),
             "vanilla_tuf" => {
-                run::<_,authenticator::VanillaTuf,_,_>(events, init, &out_db).unwrap()
+                run::<_, authenticator::VanillaTuf, _, _>(events, init, &out_db).unwrap()
             }
             _ => panic!("not valid"),
         };

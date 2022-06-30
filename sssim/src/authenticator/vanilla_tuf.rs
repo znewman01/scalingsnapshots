@@ -84,7 +84,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             snapshot.packages.insert(p, Revision::default());
         }
         snapshot.id = 1;
-        Self{snapshot}
+        Self { snapshot }
     }
 
     fn refresh_metadata(
