@@ -89,6 +89,8 @@ pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn publish(&mut self, package: PackageId);
 
     fn request_file(&mut self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
+
+    fn batch_import(packages: Vec<PackageId>) -> Self;
 }
 
 #[cfg(test)]

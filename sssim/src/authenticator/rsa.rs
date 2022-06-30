@@ -68,7 +68,7 @@ where
 #[derive(Debug, Serialize)]
 pub struct Authenticator<A>
 where
-    A: Accumulator,
+    A: Accumulator + Default,
     <A as Accumulator>::Digest: std::fmt::Debug + Serialize + Eq + PartialEq + std::hash::Hash,
 {
     rsa_acc: A,
@@ -78,7 +78,7 @@ where
 
 impl<A> Authenticator<A>
 where
-    A: Accumulator,
+    A: Accumulator + Default,
     <A as Accumulator>::Digest: std::hash::Hash
         + Eq
         + Clone
@@ -119,12 +119,25 @@ where
 #[allow(unused_variables)]
 impl<A> authenticator::Authenticator<Snapshot<A::Digest>> for Authenticator<A>
 where
-    A: Accumulator + Serialize,
+    A: Accumulator + Serialize + Default,
     <A as Accumulator>::Digest:
         Clone + Serialize + PartialEq + Eq + std::hash::Hash + std::fmt::Debug,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: Clone + Serialize,
     <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize,
 {
+    fn batch_import(packages: Vec<PackageId>) -> Self {
+        // TODO: implement batch import in the accumulator
+        let mut auth = Self::default();
+        for p in packages{
+            let encoded = bincode::serialize(&p).unwrap();
+            let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
+            auth.rsa_acc.increment(prime.clone());
+            auth.old_acc_idxs
+                .insert(auth.rsa_acc.digest().clone(), auth.log.len());
+        }
+        auth
+    }
+
     fn refresh_metadata(
         &self,
         snapshot_id: <Snapshot<A::Digest> as ClientSnapshot>::Id,

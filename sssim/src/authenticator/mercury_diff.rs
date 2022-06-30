@@ -89,6 +89,18 @@ pub struct Authenticator {
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn batch_import(packages: Vec<PackageId>) -> Self {
+        let mut snapshot = Snapshot::default();
+        for p in packages {
+            snapshot.packages.insert(p, Metadata::default());
+        }
+        let mut snapshots = HashMap::<u64, Snapshot>::new();
+        snapshots.insert(0, Snapshot::default());
+        //snapshots.insert(1, snapshot.clone());
+        snapshot.id += 1;
+        Self{snapshots, snapshot}
+    }
+
     // find the packages that have changed
     fn refresh_metadata(
         &self,

@@ -116,6 +116,22 @@ impl Default for Authenticator {
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn batch_import(packages: Vec<PackageId>) -> Self {
+        let mut nodes = Vec::<(TreeIndex, Node)>::new();
+        let mut revisions = HashMap::<PackageId, Revision>::new();
+        for p in packages {
+            let idx = TreeIndex::new(TREE_HEIGHT, hash(p.0.as_bytes()));
+            let revision = Revision::default();
+            revisions.insert(p, revision);
+            let node = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
+            nodes.push((idx, node));
+        }
+        let mut tree = SparseMerkleTree::new(TREE_HEIGHT);
+        nodes.sort_by_key(|(x, _)|*x);
+        tree.build(&nodes, &ALL_ZEROS_SECRET);
+        Self{tree, revisions}
+    }
+
     fn refresh_metadata(
         &self,
         snapshot_id: <Snapshot as ClientSnapshot>::Id,

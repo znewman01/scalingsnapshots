@@ -6,12 +6,12 @@ use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use clap::Parser;
-use rusqlite::{Connection, DatabaseName};
+use rusqlite::{Connection, DatabaseName, backup};
 use serde::Serialize;
 use uom::si::information::byte;
 
 use sssim::authenticator::ClientSnapshot;
-use sssim::log::{Action, Entry};
+use sssim::log::{Action, Entry, PackageId};
 use sssim::simulator::{ResourceUsage, Simulator};
 use sssim::{accumulator, authenticator, Authenticator};
 
@@ -88,7 +88,7 @@ fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
     ])
 }
 
-fn run<S, A, X, Y>(authenticator: A, events: X, init: Y, out: &Connection) -> rusqlite::Result<()>
+fn run<S, A, X, Y>(events: X, init: Y, out: &Connection) -> rusqlite::Result<()>
 where
     S: ClientSnapshot + Default + Debug,
     <S as ClientSnapshot>::Diff: Serialize,
@@ -109,22 +109,29 @@ where
                  )",
         [],
     )?;
-    let mut simulator = Simulator::new(authenticator);
 
     let bar = indicatif::ProgressBar::new(362350);
     let mut count = 0;
     bar.set_message("Initializing");
+    let mut to_import = Vec::<PackageId>::new();
     for line in init.lines() {
         count += 1;
         if count % PROGRESS_BAR_INCREMENT == 0 {
             bar.inc(PROGRESS_BAR_INCREMENT);
         }
         let result = serde_json::from_str(&line.expect("reading from file failed"));
-        let mut entry: Entry = result.expect("bad log entry");
-        simulator.process(&mut entry.action); // ignore resource usage for initialization
+        let entry: Entry = result.expect("bad log entry");
+        match entry.action {
+            Action::Publish {package} =>
+                { to_import.push(package.id);}
+            _ =>
+             panic!("Initialization should only include publish")
+        }
     }
+    let auth = A::batch_import(to_import);
     bar.finish();
 
+    let mut simulator = Simulator::new(auth);
     let bar = indicatif::ProgressBar::new(2269238);
     let mut count = 0;
     bar.set_message("Simulating");
@@ -156,6 +163,12 @@ where
     Ok(())
 }
 
+fn pg(p: backup::Progress) {
+    println!("{}", p.pagecount);
+    println!("{}", p.remaining);
+    return
+}
+
 fn main() -> io::Result<()> {
     let args: Args = Args::parse();
 
@@ -185,47 +198,44 @@ fn main() -> io::Result<()> {
         let out_db = Connection::open_in_memory().expect("creating SQLite db");
         println!("authenticator: {}", authenticator_config);
         match authenticator_config.as_str() {
-            "insecure" => run(authenticator::Insecure::default(), events, init, &out_db).unwrap(),
-            "hackage" => run(authenticator::Hackage::default(), events, init, &out_db).unwrap(),
+            "insecure" => run::<_, authenticator::Insecure, _, _>(events, init, &out_db).unwrap(),
+            "hackage" => run::<_, authenticator::Hackage, _, _>(events, init, &out_db).unwrap(),
             "mercury_diff" => {
-                run(authenticator::MercuryDiff::default(), events, init, &out_db).unwrap()
+                run::<_, authenticator::MercuryDiff, _, _>(events, init, &out_db).unwrap()
             }
             "mercury_hash" => {
-                run(authenticator::MercuryHash::default(), events, init, &out_db).unwrap()
+                run::<_, authenticator::MercuryHash, _, _>(events, init, &out_db).unwrap()
             }
-            "mercury_hash_diff" => run(
-                authenticator::MercuryHashDiff::default(),
+            "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff, _, _>(
                 events,
                 init,
                 &out_db,
             )
             .unwrap(),
-            "merkle" => run(authenticator::Merkle::default(), events, init, &out_db).unwrap(),
-            "rsa" => run(
-                authenticator::Accumulator::<accumulator::rsa::RsaAccumulator>::default(),
+            "merkle" => run::<_,authenticator::Merkle,_,_>(events, init, &out_db).unwrap(),
+            "rsa" => run::<_,authenticator::Accumulator::<accumulator::rsa::RsaAccumulator>,_,_>(
                 events,
                 init,
                 &out_db,
             )
             .unwrap(),
-            "rsa_cached" => run(
-                authenticator::Accumulator::<
-                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>,
-                >::default(),
+            "rsa_cached" => run::<_,authenticator::Accumulator::<
+                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>
+                >,_,_>(
                 events,
                 init,
                 &out_db,
             )
             .unwrap(),
             "vanilla_tuf" => {
-                run(authenticator::VanillaTuf::default(), events, init, &out_db).unwrap()
+                run::<_,authenticator::VanillaTuf,_,_>(events, init, &out_db).unwrap()
             }
             _ => panic!("not valid"),
         };
         let filename = format!("{}.sqlite", authenticator_config);
         let out_path = Path::new(&output_directory).join(filename);
         out_db
-            .backup(DB_NAME, out_path, None)
+            .backup(DB_NAME, out_path, Some(pg))
             .expect("backing up db");
     }
 

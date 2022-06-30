@@ -40,6 +40,10 @@ pub struct Authenticator {}
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn batch_import(packages: Vec<PackageId>) -> Self {
+        Self{}
+    }
+
     fn refresh_metadata(
         &self,
         _snapshot_id: <Snapshot as ClientSnapshot>::Id,
