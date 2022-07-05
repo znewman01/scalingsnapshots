@@ -8,6 +8,7 @@ from typing import List, Optional, Iterator, Callable, Iterable
 import sslogs.identity
 import sslogs.args
 import sslogs.pypi
+import sslogs.goodbye
 
 
 def main(argv: Optional[List[str]] = None):
@@ -26,7 +27,7 @@ def main(argv: Optional[List[str]] = None):
         title="subcommands",
         description="Different subcommands for different log sources",
     )
-    for log_source in [sslogs.identity, sslogs.pypi]:
+    for log_source in [sslogs.identity, sslogs.pypi, sslogs.goodbye]:
         log_source.add_args(subparsers)
 
     args = parser.parse_args(argv or sys.argv[1:])

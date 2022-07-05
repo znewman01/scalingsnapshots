@@ -32,9 +32,14 @@ class Publish:
 
 
 @dataclass
+class Goodbye:
+    user: str
+
+
+@dataclass
 class LogEntry:
     timestamp: datetime.datetime
-    action: Union[Download, RefreshMetadata, Publish]
+    action: Union[Download, RefreshMetadata, Publish, Goodbye]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
