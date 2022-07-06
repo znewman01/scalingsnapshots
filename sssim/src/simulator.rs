@@ -133,12 +133,23 @@ where
         }
     }
 
+    fn process_goodbye(&mut self, user: UserId) -> ResourceUsage {
+        self.snapshots.remove(&user);
+        ResourceUsage {
+            server_compute: Duration::ZERO,
+            user_compute: Duration::ZERO,
+            bandwidth: Information::ZERO,
+            storage: Information::ZERO,
+        }
+    }
+
     pub fn process(&mut self, action: &mut Action) -> ResourceUsage {
         // TODO: batch publish?
         match action {
             Action::Download { user, package } => self.process_download(user.clone(), package),
             Action::RefreshMetadata { user } => self.process_refresh_metadata(user.clone()),
             Action::Publish { package } => self.process_publish(package.clone()),
+            Action::Goodbye { user } => self.process_goodbye(user.clone()),
         }
     }
 }

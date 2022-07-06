@@ -41,16 +41,12 @@ struct Event {
 const PROGRESS_BAR_INCREMENT: u64 = 100;
 const DB_NAME: DatabaseName = DatabaseName::Main;
 
-fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
-    let action = match event.entry.action {
-        Action::RefreshMetadata { .. } => "refresh",
-        Action::Download { .. } => "download",
-        Action::Publish { .. } => "publish",
-    };
-    let user = match event.entry.action {
-        Action::RefreshMetadata { user } => Some(user.0),
-        Action::Download { user, .. } => Some(user.0),
-        Action::Publish { .. } => None,
+fn write_sqlite(event: Event, conn: &Connection) -> Option<rusqlite::Result<usize>> {
+    let (action, user) = match event.entry.action {
+        Action::RefreshMetadata { user } => ("refresh", Some(user.0)),
+        Action::Download { user, .. } => ("download", Some(user.0)),
+        Action::Publish { .. } => ("publish", None),
+        Action::Goodbye { .. } => {return None;},
     };
     let server_compute_ns: u64 = event
         .result
@@ -64,7 +60,7 @@ fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
         .whole_nanoseconds()
         .try_into()
         .unwrap();
-    let mut statement = conn.prepare_cached(
+    let statement = conn.prepare_cached(
         "
         INSERT INTO results (
              timestamp,
@@ -76,8 +72,12 @@ fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
              server_storage_bytes
              ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 )
     ",
-    )?;
-    statement.execute(rusqlite::params![
+    );
+    if let Err(e) = statement {
+        return Some(Err(e));
+    }
+    let mut statement = statement.unwrap();
+    Some(statement.execute(rusqlite::params![
         event.entry.timestamp.unix_timestamp(),
         action,
         user,
@@ -85,7 +85,7 @@ fn write_sqlite(event: Event, conn: &Connection) -> rusqlite::Result<usize> {
         user_compute_ns,
         event.result.bandwidth.get::<byte>(),
         event.result.storage.get::<byte>(),
-    ])
+    ]))
 }
 
 fn run<S, A, X, Y>(events: X, init: Y, out: &Connection) -> rusqlite::Result<()>
@@ -150,14 +150,18 @@ where
                 entry: inner_entry,
                 result: refresh_usage,
             };
-            write_sqlite(event, out)?;
+            if let Some(result) = write_sqlite(event, out) {
+                result?;
+            }
         }
         let usage = simulator.process(&mut entry.action);
         let event = Event {
             entry,
             result: usage,
         };
-        write_sqlite(event, out)?;
+        if let Some(result) = write_sqlite(event, out) {
+            result?;
+        }
     }
     bar.finish();
     Ok(())

@@ -64,6 +64,7 @@ pub enum Action {
     Download { user: UserId, package: Package },
     RefreshMetadata { user: UserId },
     Publish { package: Package },
+    Goodbye { user: UserId },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
