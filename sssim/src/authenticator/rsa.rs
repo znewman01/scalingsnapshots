@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::NonZeroU64};
 
 use crate::{
     accumulator::{Accumulator, Digest},
-    hash_to_prime::division_intractable_hash,
+    hash_to_prime::hash_to_prime,
 };
 use rug::Integer;
 use serde::Serialize;
@@ -54,7 +54,7 @@ where
         proof: Self::Proof,
     ) -> bool {
         let encoded = bincode::serialize(package_id).unwrap();
-        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS); // TODO
+        let prime = hash_to_prime(&encoded).unwrap();
         if !self
             .rsa_state
             .verify(&prime, revision.0.get().try_into().unwrap(), proof)
@@ -130,7 +130,7 @@ where
         let mut auth = Self::default();
         for p in packages {
             let encoded = bincode::serialize(&p).unwrap();
-            let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
+            let prime = hash_to_prime(&encoded).unwrap();
             auth.rsa_acc.increment(prime.clone());
             auth.old_acc_idxs
                 .insert(auth.rsa_acc.digest().clone(), auth.log.len());
@@ -160,7 +160,7 @@ where
 
     fn publish(&mut self, package: PackageId) -> () {
         let encoded = bincode::serialize(&package).unwrap();
-        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
+        let prime = hash_to_prime(&encoded).unwrap();
         self.rsa_acc.increment(prime.clone());
         self.log.push(prime);
         self.old_acc_idxs
@@ -173,7 +173,7 @@ where
         package: &PackageId,
     ) -> (Revision, <Snapshot<A::Digest> as ClientSnapshot>::Proof) {
         let encoded = bincode::serialize(package).unwrap();
-        let prime = division_intractable_hash(&encoded, &crate::accumulator::rsa::MODULUS);
+        let prime = hash_to_prime(&encoded).unwrap();
 
         let revision = self.rsa_acc.get(&prime);
         let proof = self.rsa_acc.prove(&prime, revision).expect("proof failed");

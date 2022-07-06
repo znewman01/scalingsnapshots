@@ -2,7 +2,10 @@ use digest::{ExtendableOutput, Update, XofReader};
 use rug;
 use rug::Complete;
 use sha3::{Sha3XofReader, Shake256};
-use std::convert::TryInto;
+
+// How sure do we want to be that our primes are actually prime?
+// We want to be 30 sure.
+const MILLER_RABIN_ITERS: u32 = 30;
 
 #[derive(Debug)]
 pub struct MyError;
@@ -40,58 +43,24 @@ impl IntegerHasher {
     }
 }
 
-struct RandMod<'a, F> {
-    rand: F,
-    modulus: &'a rug::Integer,
-    bits: u32,
-    t: rug::Integer,
-}
-
-impl<'a, F> RandMod<'a, F>
-where
-    F: FnMut() -> rug::Integer,
-{
-    fn new(rand: F, modulus: &'a rug::Integer) -> Self {
-        const BITS_PER_BYTE: usize = 8;
-        let bits: u32 = (modulus.significant_digits::<u8>() * BITS_PER_BYTE)
-            .try_into()
-            .unwrap();
-        // declarations for the loop
-        let (t, _) = ((rug::Integer::from(2) << bits) - modulus)
-            .div_rem_ref(modulus)
-            .complete();
-        Self {
-            rand,
-            modulus,
-            bits,
-            t,
-        }
-    }
-
-    // https://arxiv.org/abs/1805.10941
-    fn rand_mod(&mut self) -> rug::Integer {
-        let mut m = (self.rand)() * self.modulus;
-        let mut l = m.clone().keep_bits(self.bits);
-        if &l < self.modulus {
-            while l < self.t {
-                m = (self.rand)() * self.modulus;
-                l = m.clone().keep_bits(self.bits);
-            }
-        }
-
-        let candidate = m >> self.bits;
-        assert!(&candidate < self.modulus);
-        candidate
-    }
-}
-
-#[must_use]
-pub fn division_intractable_hash(data: &[u8], modulus: &rug::Integer) -> rug::Integer {
+/// Hash the value of data to a prime number less than modulus.
+pub fn hash_to_prime(data: &[u8]) -> Result<rug::Integer, MyError> {
     // We want a random number with a number of bits just greater than modulus
     // has. significant_digits gives us the right number of bytes.
-    let digits: usize = modulus.significant_digits::<u8>();
+    let digits: usize = 32;
     let mut bar = IntegerHasher::new(data, digits);
-    RandMod::new(|| bar.hash(), modulus).rand_mod()
+
+    // TODO: calculate how many times we should actually do this.
+    // It appears to be between 10,000 and 100,000.
+    for _ in 0..10000 {
+        let candidate = bar.hash();
+        if candidate.is_probably_prime(MILLER_RABIN_ITERS) == rug::integer::IsPrime::No {
+            continue;
+        }
+        // If we made it here, our candidate rocks.
+        return Ok(candidate);
+    }
+    Err(MyError)
 }
 
 // TODO: hash to 256-bit (security parameter) prime
