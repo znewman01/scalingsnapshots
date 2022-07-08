@@ -13,12 +13,12 @@ use crate::{authenticator, log::PackageId};
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot<D: Digest> {
-    rsa_state: D, // TODO: s/rsa//
+    digest: Option<D>,
 }
 
 impl<D: Digest> Snapshot<D> {
-    pub fn new(rsa_state: D) -> Self {
-        Self { rsa_state }
+    pub fn new(digest: D) -> Self {
+        Self { digest: Some(digest) }
     }
 }
 
@@ -28,23 +28,27 @@ where
     <D as Digest>::AppendOnlyWitness: Clone + Serialize,
     <D as Digest>::Witness: Clone + Serialize,
 {
-    type Id = D;
-    type Diff = (Self, D::AppendOnlyWitness);
+    type Id = Option<D>;
+    type Diff = (D, Option<D::AppendOnlyWitness>);
     type Proof = D::Witness;
 
     fn id(&self) -> Self::Id {
-        self.rsa_state.clone()
+        self.digest.clone()
     }
 
     fn update(&mut self, diff: Self::Diff) {
-        let (new_snapshot, _) = diff;
-        self.rsa_state = new_snapshot.rsa_state;
+        let (new_digest, _) = diff;
+        self.digest = Some(new_digest);
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        let (new_snapshot, proof) = diff;
-        self.rsa_state
-            .verify_append_only(proof, &new_snapshot.rsa_state)
+        let (new_digest, proof) = diff;
+        match (proof, self.digest.as_ref()) {
+            (Some(p), Some(s)) => s.verify_append_only(p, &new_digest),
+            (Some(_), None) => panic!("Weird combination of proof and no state"),
+            (None, None) => true,
+            (None, Some(_)) => false
+        }
     }
 
     fn verify_membership(
@@ -55,13 +59,10 @@ where
     ) -> bool {
         let encoded = bincode::serialize(package_id).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
-        if !self
-            .rsa_state
-            .verify(&prime, revision.0.get().try_into().unwrap(), proof)
-        {
-            return false;
+        match &self.digest {
+            None => false,
+            Some(d) => d.verify(&prime, revision.0.get().try_into().unwrap(), proof)
         }
-        true
     }
 }
 
@@ -132,8 +133,6 @@ where
             let encoded = bincode::serialize(&p).unwrap();
             let prime = hash_to_prime(&encoded).unwrap();
             auth.rsa_acc.increment(prime.clone());
-            auth.old_acc_idxs
-                .insert(auth.rsa_acc.digest().clone(), auth.log.len());
         }
         auth
     }
@@ -142,11 +141,16 @@ where
         &self,
         snapshot_id: <Snapshot<A::Digest> as ClientSnapshot>::Id,
     ) -> Option<<Snapshot<A::Digest> as ClientSnapshot>::Diff> {
-        if &snapshot_id == self.rsa_acc.digest() {
+        let snap = match snapshot_id {
+            // client had no state, they don't need a proof
+            None => {return Some((self.rsa_acc.digest().clone(), None));}
+            Some(s) => s
+        };
+        if &snap == self.rsa_acc.digest() {
             return None;
         }
-        let new_snapshot = Snapshot::new(self.rsa_acc.digest().clone());
-        let old_rsa_acc_idx = match self.old_acc_idxs.get(&snapshot_id) {
+        let new_digest = self.rsa_acc.digest().clone();
+        let old_rsa_acc_idx = match self.old_acc_idxs.get(&snap) {
             Some(o) => o,
             None => {
                 panic!("missing accumulator index");
@@ -155,7 +159,7 @@ where
         let proof = self
             .rsa_acc
             .prove_append_only_from_vec(&self.log[*old_rsa_acc_idx..]);
-        Some((new_snapshot, proof))
+        Some((new_digest, Some(proof)))
     }
 
     fn publish(&mut self, package: PackageId) -> () {
