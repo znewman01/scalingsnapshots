@@ -46,7 +46,9 @@ fn write_sqlite(event: Event, conn: &Connection) -> Option<rusqlite::Result<usiz
         Action::RefreshMetadata { user } => ("refresh", Some(user.0)),
         Action::Download { user, .. } => ("download", Some(user.0)),
         Action::Publish { .. } => ("publish", None),
-        Action::Goodbye { .. } => {return None;},
+        Action::Goodbye { .. } => {
+            return None;
+        }
     };
     let server_compute_ns: u64 = event
         .result

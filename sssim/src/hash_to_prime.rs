@@ -1,6 +1,5 @@
 use digest::{ExtendableOutput, Update, XofReader};
 use rug;
-use rug::Complete;
 use sha3::{Sha3XofReader, Shake256};
 
 // How sure do we want to be that our primes are actually prime?
@@ -27,7 +26,7 @@ impl IntegerHasher {
     fn new(data: &[u8], digits: usize) -> Self {
         // Here, we use Shake256 which is an "extendable output function" (XOF).
         // This is basically a hash function that gives you as many bytes of output
-        // as you want. We need a weird number of bytes which depends on modulus,
+        // as you want. We need a weird number of bytes which depends on `digits`,
         // *and* we may need to try many times in a row, so the XOF gives us as much
         // hash data as we need.
         let mut hasher = Shake256::default();
@@ -43,7 +42,7 @@ impl IntegerHasher {
     }
 }
 
-/// Hash the value of data to a prime number less than modulus.
+/// Hash the value of data to a 256-bit prime number.
 pub fn hash_to_prime(data: &[u8]) -> Result<rug::Integer, MyError> {
     // We want a random number with a number of bits just greater than modulus
     // has. significant_digits gives us the right number of bytes.
@@ -63,23 +62,16 @@ pub fn hash_to_prime(data: &[u8]) -> Result<rug::Integer, MyError> {
     Err(MyError)
 }
 
-// TODO: hash to 256-bit (security parameter) prime
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    fn integers() -> impl Strategy<Value = rug::Integer> {
-        any::<u128>().prop_map(rug::Integer::from)
-    }
-
     proptest! {
         #[test]
-        fn test_division_intractable_hash(data: Vec<u8>, modulus in integers()) {
-            prop_assume!(modulus > 128);
-            let result = division_intractable_hash(&data, &modulus);
-            prop_assert!(result < modulus);
+        fn test_hash_to_prime(data: Vec<u8>) {
+            let result = hash_to_prime(&data)?;
+            prop_assert!(result.significant_bits() <= 256);
         }
     }
 }

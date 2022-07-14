@@ -18,7 +18,9 @@ pub struct Snapshot<D: Digest> {
 
 impl<D: Digest> Snapshot<D> {
     pub fn new(digest: D) -> Self {
-        Self { digest: Some(digest) }
+        Self {
+            digest: Some(digest),
+        }
     }
 }
 
@@ -47,7 +49,7 @@ where
             (Some(p), Some(s)) => s.verify_append_only(p, &new_digest),
             (Some(_), None) => panic!("Weird combination of proof and no state"),
             (None, None) => true,
-            (None, Some(_)) => false
+            (None, Some(_)) => false,
         }
     }
 
@@ -61,7 +63,7 @@ where
         let prime = hash_to_prime(&encoded).unwrap();
         match &self.digest {
             None => false,
-            Some(d) => d.verify(&prime, revision.0.get().try_into().unwrap(), proof)
+            Some(d) => d.verify(&prime, revision.0.get().try_into().unwrap(), proof),
         }
     }
 }
@@ -144,8 +146,10 @@ where
     ) -> Option<<Snapshot<A::Digest> as ClientSnapshot>::Diff> {
         let snap = match snapshot_id {
             // client had no state, they don't need a proof
-            None => {return Some((self.rsa_acc.digest().clone(), None));}
-            Some(s) => s
+            None => {
+                return Some((self.rsa_acc.digest().clone(), None));
+            }
+            Some(s) => s,
         };
         if &snap == self.rsa_acc.digest() {
             return None;
