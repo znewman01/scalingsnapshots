@@ -159,12 +159,12 @@ fn precompute(slice: &[Integer], g: Integer) -> Vec<MembershipWitness> {
         panic!("slice len should not be 0");
     }
     if slice.len() == 1 {
-      return vec![MembershipWitness(g)];
+        return vec![MembershipWitness(g)];
     }
     //else split into 2
-    let split_idx = slice.len()/2;
-    let left = &slice[0 .. split_idx];
-    let right = &slice[split_idx .. slice.len()];
+    let split_idx = slice.len() / 2;
+    let left = &slice[0..split_idx];
+    let right = &slice[split_idx..slice.len()];
     let mut g_r = g.clone();
     for r in right {
         g_r.pow_mod_mut(r, &MODULUS).expect("r is non-negative");
@@ -180,7 +180,6 @@ fn precompute(slice: &[Integer], g: Integer) -> Vec<MembershipWitness> {
 }
 
 impl RsaAccumulator {
-
     //TODO compute all proofs?
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
@@ -212,18 +211,16 @@ impl RsaAccumulator {
         }
 
         // Bezout coefficients:
-        // gcd = exp * s + value * t
-        let (gcd, s, t) = exp.gcd_cofactors(value.into(), Integer::new());
+        // gcd = exp * s + value * t = 1
+        let (gcd, s, t) = Integer::gcd_cofactors(exp, value.into(), Integer::new());
 
         if gcd != 1 {
             unreachable!("value should be coprime with the exponent of the accumulator");
         }
 
-        let x = GENERATOR.clone();
-
         Some(NonMembershipWitness {
             exp: s,
-            base: x.pow_mod(&t, &MODULUS).unwrap(),
+            base: GENERATOR.clone().pow_mod(&t, &MODULUS).unwrap(),
         })
     }
 }
@@ -236,6 +233,7 @@ impl Accumulator for RsaAccumulator {
     }
 
     // TODO update these proofs on every upload
+    // TODO precompute nonmembership proofs
     fn precompute_proofs(&mut self) {
         let mut members = Vec::with_capacity(self.multiset.len());
         let mut values = Vec::with_capacity(self.multiset.len());
@@ -246,12 +244,25 @@ impl Accumulator for RsaAccumulator {
         }
         let mut cache = precompute(&values, GENERATOR.clone());
         for _ in 0..members.len() {
-            self.proof_cache.insert(members.pop().unwrap().clone(), cache.pop().unwrap());
+            self.proof_cache
+                .insert(members.pop().unwrap().clone(), cache.pop().unwrap());
         }
     }
 
+    /// O(N)
     fn increment(&mut self, member: Integer) {
         assert!(member >= 0);
+        // We need to update every membership proof, *except* our own!
+        for (value, proof) in self.proof_cache.iter_mut() {
+            if value == &member {
+                continue;
+            }
+            proof.0.pow_mod_mut(&member, &MODULUS).expect("member >= 0");
+        }
+        if self.proof_cache.get_mut(&member).is_none() {
+            self.proof_cache
+                .insert(member.clone(), MembershipWitness(self.digest.value.clone()));
+        }
         self.digest
             .value
             .pow_mod_mut(&member, &MODULUS)
@@ -281,6 +292,9 @@ impl Accumulator for RsaAccumulator {
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
+        if self.multiset.get(member) != revision {
+            return None;
+        }
         if revision == 0 {
             return self.prove_nonmember(member).map(Witness::for_zero);
         }
@@ -322,20 +336,36 @@ mod test {
     use super::*;
 
     fn primes() -> impl Strategy<Value = Integer> {
-        Just(5.into())
+        prop_oneof![
+            Just(2.into()),
+            Just(3.into()),
+            Just(5.into()),
+            Just(7.into()),
+            Just(11.into()),
+            Just(13.into()),
+        ]
     }
 
     proptest! {
         #[test]
-        fn test_rsa_accumulator_inner(mut acc: RsaAccumulator, value in primes()) {
+        fn test_rsa_accumulator_inner(mut acc: RsaAccumulator, value1 in primes(), value2 in primes()) {
+            prop_assume!(value1 != value2);
             for rev in 0..10 {
+                // At the start of this loop, we have exactly `rev` copies of `value` accumulated.
                 if rev > 0 {
-                    assert!(acc.prove(&value, rev - 1).is_none());
+                    assert!(acc.prove(&value1, rev - 1).is_none());
+                    assert!(acc.prove(&value2, rev - 1).is_none());
                 }
-                assert!(acc.prove(&value, rev + 1).is_none());
-                let witness = acc.prove(&value, rev).expect("should be able to prove current revision");
-                assert!(acc.digest.verify(&value, rev, witness));
-                acc.increment(value.clone());
+                // check value1
+                assert!(acc.prove(&value1, rev + 1).is_none());
+                let witness = acc.prove(&value1, rev).expect("should be able to prove current revision");
+                assert!(acc.digest.verify(&value1, rev, witness));
+                acc.increment(value1.clone());
+                // check value2
+                assert!(acc.prove(&value2, rev + 1).is_none());
+                let witness = acc.prove(&value2, rev).expect("should be able to prove current revision");
+                assert!(acc.digest.verify(&value2, rev, witness));
+                acc.increment(value2.clone());
             }
         }
     }
