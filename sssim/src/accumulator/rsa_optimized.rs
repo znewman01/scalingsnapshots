@@ -5,6 +5,8 @@ use serde::{ser::SerializeMap, Serialize};
 
 use crate::accumulator::{Accumulator, Digest};
 
+type CacheKey<A> = (<A as Accumulator>::Digest, Integer, u32);
+
 // TODO: also rsa precompute
 #[derive(Default, Debug, Clone)]
 struct Cache<A>
@@ -14,10 +16,7 @@ where
         Eq + PartialEq + std::hash::Hash + std::fmt::Debug + Clone + Serialize,
     <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
 {
-    inner: HashMap<
-        (<A as Accumulator>::Digest, Integer, u32),
-        Option<<<A as Accumulator>::Digest as Digest>::Witness>,
-    >,
+    inner: HashMap<CacheKey<A>, Option<<<A as Accumulator>::Digest as Digest>::Witness>>,
 }
 
 impl<A> Serialize for Cache<A>

@@ -35,7 +35,7 @@ impl Serialize for RsaAccumulatorDigest {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self.value.to_string()))
+        serializer.serialize_str(&self.value.to_string())
     }
 }
 
@@ -85,7 +85,7 @@ impl Witness {
 
 impl RsaAccumulatorDigest {
     fn verify_member(&self, member: &Integer, revision: u32, witness: MembershipWitness) -> bool {
-        let exponent = member.pow(&revision.into());
+        let exponent = member.pow(&revision);
         witness
             .0
             .pow_mod(&exponent.into(), &MODULUS)
@@ -201,7 +201,7 @@ impl RsaAccumulator {
     #[must_use]
     fn prove_nonmember(&self, value: &Integer) -> Option<NonMembershipWitness> {
         // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
-        if self.multiset.get(&value) != 0 {
+        if self.multiset.get(value) != 0 {
             return None; // value is a member!
         }
 

@@ -46,7 +46,7 @@ where
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
         let (new_digest, proof) = diff;
         match (proof, self.digest.as_ref()) {
-            (Some(p), Some(s)) => s.verify_append_only(p, &new_digest),
+            (Some(p), Some(s)) => s.verify_append_only(p, new_digest),
             (Some(_), None) => panic!("Weird combination of proof and no state"),
             (None, None) => true,
             (None, Some(_)) => false,
@@ -167,7 +167,7 @@ where
         Some((new_digest, Some(proof)))
     }
 
-    fn publish(&mut self, package: PackageId) -> () {
+    fn publish(&mut self, package: PackageId) {
         let encoded = bincode::serialize(&package).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
         self.rsa_acc.increment(prime.clone());

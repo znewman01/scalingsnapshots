@@ -172,7 +172,6 @@ where
 fn pg(p: backup::Progress) {
     println!("{}", p.pagecount);
     println!("{}", p.remaining);
-    return;
 }
 
 fn main() -> io::Result<()> {

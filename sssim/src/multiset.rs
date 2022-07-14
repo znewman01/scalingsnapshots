@@ -49,7 +49,7 @@ impl<T: Hash + Eq> MultiSet<T> {
     }
 
     pub fn clear(&mut self, member: &T) -> Option<u32> {
-        self.inner.remove(member).clone()
+        self.inner.remove(member)
     }
 
     pub fn iter<'a>(&'a self) -> impl std::iter::Iterator<Item = (&'a T, &u32)> {
@@ -62,7 +62,7 @@ impl<T: Hash + Eq> MultiSet<T> {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     pub fn difference<'a>(&'a self, other: &Self) -> Vec<(&'a T, u32)> {

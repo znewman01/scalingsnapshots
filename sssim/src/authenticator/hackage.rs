@@ -37,7 +37,7 @@ impl ClientSnapshot for Snapshot {
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
         // TODO: combine with update
-        for (package_id, new_revision) in diff.into_iter() {
+        for (package_id, new_revision) in diff.iter() {
             let result = self.package_revisions.get(package_id);
             if matches!(result, Some(old_revision) if old_revision > new_revision) {
                 return false;

@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
-use sssim::hash_to_prime::division_intractable_hash;
-use sssim::rsa_accumulator::{RsaAccumulator, MODULUS};
+use sssim::accumulator::RsaAccumulator;
+use sssim::hash_to_prime::hash_to_prime;
 use std::convert::TryInto;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
@@ -9,12 +9,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     // Make accumulator with one item
     c.bench_function("acc 1", |b| {
         b.iter_batched(
-            || {
-                (
-                    RsaAccumulator::default(),
-                    division_intractable_hash(&[], &MODULUS),
-                )
-            },
+            || (RsaAccumulator::default(), hash_to_prime(&[])),
             |(mut acc, value)| acc.add(black_box(value)),
             BatchSize::LargeInput,
         );
@@ -30,7 +25,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 || {
                     (0..**s)
                         .into_iter()
-                        .map(|x| division_intractable_hash(&[x.try_into().unwrap()], &MODULUS))
+                        .map(|x| hash_to_prime(&[x.try_into().unwrap()]))
                         .collect::<Vec<_>>()
                 },
                 RsaAccumulator::new,
@@ -42,7 +37,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     //fix with https://arxiv.org/pdf/1805.10941.pdf
     c.bench_function("division_intractable_hash 1", |b| {
-        b.iter(|| division_intractable_hash(black_box(&[8u8]), &MODULUS));
+        b.iter(|| hash_to_prime(black_box(&[8u8])));
     });
 }
 
