@@ -41,7 +41,8 @@
         apps.default = flake-utils.lib.mkApp { drv = packages.default; };
         devShells.default = pkgs.mkShell {
           buildInputs = packages.default.nativeBuildInputs
-            ++ [ pkgs.rust-analyzer pkgs.linuxKernel.packages.linux_5_15.perf ];
+            ++ [ pkgs.rust-analyzer ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux
+            [ pkgs.linuxKernel.packages.linux_5_15.perf ];
           RUST_SRC_PATH = "${rust}/lib/rustlib/src/rust/library";
         };
       });
