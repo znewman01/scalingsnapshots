@@ -76,4 +76,8 @@ impl<T: Hash + Eq> MultiSet<T> {
         }
         results
     }
+
+    pub fn len(&mut self) -> usize {
+        return self.inner.len();
+    }
 }

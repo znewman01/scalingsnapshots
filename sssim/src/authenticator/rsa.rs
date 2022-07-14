@@ -134,6 +134,7 @@ where
             let prime = hash_to_prime(&encoded).unwrap();
             auth.rsa_acc.increment(prime.clone());
         }
+        auth.rsa_acc.precompute_proofs();
         auth
     }
 

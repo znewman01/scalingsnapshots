@@ -218,15 +218,6 @@ fn main() -> io::Result<()> {
                 events, init, &out_db,
             )
             .unwrap(),
-            "rsa_cached" => run::<
-                _,
-                authenticator::Accumulator<
-                    accumulator::CachingAccumulator<accumulator::RsaAccumulator>,
-                >,
-                _,
-                _,
-            >(events, init, &out_db)
-            .unwrap(),
             "vanilla_tuf" => {
                 run::<_, authenticator::VanillaTuf, _, _>(events, init, &out_db).unwrap()
             }

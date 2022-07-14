@@ -2,6 +2,7 @@ use crate::multiset::MultiSet;
 use lazy_static::lazy_static;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
+use std::collections::HashMap;
 
 use crate::accumulator::{Accumulator, Digest};
 
@@ -150,9 +151,36 @@ impl Digest for RsaAccumulatorDigest {
 pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     multiset: MultiSet<Integer>,
+    proof_cache: HashMap<Integer, MembershipWitness>,
+}
+
+fn precompute(slice: &[Integer], g: Integer) -> Vec<MembershipWitness> {
+    if slice.len() == 0 {
+        panic!("slice len should not be 0");
+    }
+    if slice.len() == 1 {
+      return vec![MembershipWitness(g)];
+    }
+    //else split into 2
+    let split_idx = slice.len()/2;
+    let left = &slice[0 .. split_idx];
+    let right = &slice[split_idx .. slice.len()];
+    let mut g_r = g.clone();
+    for r in right {
+        g_r.pow_mod_mut(r, &MODULUS).expect("r is non-negative");
+    }
+    let mut g_l = g.clone();
+    for l in left {
+        g_l.pow_mod_mut(l, &MODULUS).expect("l is non-negative");
+    }
+    let mut l_ret = precompute(&left, g_r);
+    let r_ret = precompute(&right, g_l);
+    l_ret.extend_from_slice(&r_ret);
+    l_ret
 }
 
 impl RsaAccumulator {
+
     //TODO compute all proofs?
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
@@ -207,6 +235,21 @@ impl Accumulator for RsaAccumulator {
         &self.digest
     }
 
+    // TODO update these proofs on every upload
+    fn precompute_proofs(&mut self) {
+        let mut members = Vec::with_capacity(self.multiset.len());
+        let mut values = Vec::with_capacity(self.multiset.len());
+        for (s, count) in self.multiset.iter() {
+            let exp = Integer::from(s.pow(count));
+            values.push(exp);
+            members.push(s);
+        }
+        let mut cache = precompute(&values, GENERATOR.clone());
+        for _ in 0..members.len() {
+            self.proof_cache.insert(members.pop().unwrap().clone(), cache.pop().unwrap());
+        }
+    }
+
     fn increment(&mut self, member: Integer) {
         assert!(member >= 0);
         self.digest
@@ -241,7 +284,7 @@ impl Accumulator for RsaAccumulator {
         if revision == 0 {
             return self.prove_nonmember(member).map(Witness::for_zero);
         }
-        self.prove_member(member, revision).and_then(|mem_pf| {
+        self.proof_cache.get(member).and_then(|mem_pf| {
             // TODO: more efficiently/better
             let mut ms = self.multiset.clone();
             for _ in 0..revision {
@@ -250,9 +293,10 @@ impl Accumulator for RsaAccumulator {
             let acc = RsaAccumulator {
                 digest: RsaAccumulatorDigest::from(mem_pf.0.clone()),
                 multiset: ms,
+                ..Default::default()
             };
             acc.prove_nonmember(member)
-                .map(|nonmem_pf| Witness::new(mem_pf, nonmem_pf))
+                .map(|nonmem_pf| Witness::new(mem_pf.clone(), nonmem_pf))
         })
     }
 

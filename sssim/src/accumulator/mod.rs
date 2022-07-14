@@ -1,9 +1,9 @@
 use rug::Integer;
 
 pub mod rsa;
-pub mod rsa_optimized; // todo: rename to caching
+// pub mod rsa_optimized; // todo: rename to caching
 
-pub use rsa_optimized::CachingAccumulator;
+//pub use rsa_optimized::CachingAccumulator;
 
 pub use rsa::{RsaAccumulator, RsaAccumulatorDigest};
 
@@ -44,4 +44,6 @@ pub trait Accumulator {
 
     #[must_use]
     fn get(&self, member: &Integer) -> u32;
+
+    fn precompute_proofs(&mut self);
 }
