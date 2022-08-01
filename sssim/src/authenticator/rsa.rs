@@ -1,8 +1,9 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
 use crate::{
-    accumulator::{Accumulator, Digest},
+    accumulator::{Accumulator, Digest, RsaAccumulator},
     hash_to_prime::hash_to_prime,
+    multiset::MultiSet,
 };
 use rug::Integer;
 use serde::Serialize;
@@ -129,15 +130,14 @@ where
     <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize,
 {
     fn batch_import(packages: Vec<PackageId>) -> Self {
-        // TODO: implement batch import in the accumulator
-        let mut auth = Self::default();
+        let mut multiset = MultiSet::<Integer>::default();
         for p in packages {
             let encoded = bincode::serialize(&p).unwrap();
             let prime = hash_to_prime(&encoded).unwrap();
-            auth.rsa_acc.increment(prime.clone());
+            multiset.insert(prime);
         }
-        auth.rsa_acc.precompute_proofs();
-        auth
+        let acc = A::import(multiset);
+        Self::new(acc)
     }
 
     fn refresh_metadata(

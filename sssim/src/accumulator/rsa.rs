@@ -363,21 +363,31 @@ impl Accumulator for RsaAccumulator {
     }
 
     // TODO precompute nonmembership proofs
-    fn precompute_proofs(&mut self) {
+    fn import(multiset: MultiSet<Integer>) -> Self {
         // Precompute membership proofs:
-        let mut members = Vec::with_capacity(self.multiset.len());
-        let mut values = Vec::with_capacity(self.multiset.len());
-        for (s, count) in self.multiset.iter() {
+        let mut members = Vec::with_capacity(multiset.len());
+        let mut values = Vec::with_capacity(multiset.len());
+        let mut digest = GENERATOR.clone(); // TODO: repeat less work
+        for (s, count) in multiset.iter() {
             let exp = Integer::from(s.pow(count));
+            digest.pow_mod_mut(&exp, &MODULUS).unwrap();
             values.push(exp);
             members.push(s);
         }
         let mut proofs = precompute(&values);
 
+        let mut proof_cache: HashMap<Integer, Witness> = Default::default();
         for _ in 0..members.len() {
             let member = members.pop().unwrap();
             let witness = proofs.pop().unwrap();
-            self.proof_cache.insert(member.clone(), witness);
+            proof_cache.insert(member.clone(), witness);
+        }
+
+        let digest = RsaAccumulatorDigest::from(digest);
+        Self {
+            digest,
+            multiset,
+            proof_cache,
         }
     }
 
@@ -483,7 +493,7 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_rsa_accumulator_inner(mut acc: RsaAccumulator, value1 in primes(), value2 in primes()) {
+        fn test_rsa_accumulator(mut acc: RsaAccumulator, value1 in primes(), value2 in primes()) {
             println!("start new test");
             prop_assume!(value1 != value2);
             acc.increment(value2.clone());
@@ -511,10 +521,27 @@ mod test {
                 prop_assert!(acc.digest.verify(&value2, 1, witness));
             }
         }
+
+        fn test_rsa_accumulator_precompute(values in prop::collection::vec(primes(), 0..10)) {
+            let multiset = MultiSet::<Integer>::from(values);
+            let mut acc = RsaAccumulator::import(multiset.clone());
+            for (value, count) in multiset.iter() {
+                prop_assert!(acc.prove(&value, count + 1).is_none());
+                let witness = acc.prove(&value, *count).expect("should be able to prove current revision");
+                prop_assert!(acc.digest.verify(&value, count - 1, witness));
+            }
+            for (value, count) in multiset.iter() {
+                acc.increment(value.clone());
+                prop_assert!(acc.prove(&value, *count).is_none());
+                let witness = acc.prove(&value, count + 1).expect("should be able to prove current revision");
+                prop_assert!(acc.digest.verify(&value, count + 2, witness));
+            }
+        }
+
     }
 
     #[test]
-    fn test_rsa_accumulator() {
+    fn test_rsa_accumulator_default() {
         let acc = RsaAccumulator::default();
         assert_eq!(acc.digest.value, GENERATOR.clone());
     }

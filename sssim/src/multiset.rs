@@ -5,6 +5,8 @@ use std::{collections::HashMap, hash::Hash};
 use rug::Integer;
 use serde::{ser::SerializeMap, Serialize};
 
+use crate::accumulator::Accumulator;
+
 #[derive(Debug, Default, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
     inner: HashMap<T, u32>,
@@ -77,7 +79,17 @@ impl<T: Hash + Eq> MultiSet<T> {
         results
     }
 
-    pub fn len(&mut self) -> usize {
+    pub fn len(&self) -> usize {
         return self.inner.len();
+    }
+}
+
+impl<T: Hash + Eq + Clone + Default> From<Vec<T>> for MultiSet<T> {
+    fn from(values: Vec<T>) -> Self {
+        let mut multiset = MultiSet::default();
+        for value in values.iter().cloned() {
+            multiset.insert(value);
+        }
+        multiset
     }
 }

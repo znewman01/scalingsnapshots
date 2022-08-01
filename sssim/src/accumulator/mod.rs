@@ -7,6 +7,8 @@ pub mod rsa;
 
 pub use rsa::{RsaAccumulator, RsaAccumulatorDigest};
 
+use crate::multiset::MultiSet;
+
 pub trait Digest {
     type Witness;
     type AppendOnlyWitness;
@@ -45,5 +47,5 @@ pub trait Accumulator {
     #[must_use]
     fn get(&self, member: &Integer) -> u32;
 
-    fn precompute_proofs(&mut self);
+    fn import(multiset: MultiSet<Integer>) -> Self;
 }
