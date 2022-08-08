@@ -221,6 +221,8 @@ fn precompute_helper(
     proof: NonMembershipWitness,
     g: Integer,
 ) -> Vec<Witness> {
+    println!("values: {:?}", values);
+    println!("counts: {:?}", counts);
     assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
         panic!("slice len should not be 0");
@@ -265,6 +267,8 @@ fn precompute_helper(
         MembershipWitness(g.clone())
     ));
     assert!(RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone()));
+    let mut delta_left = members_left.clone()/values_left.clone();
+    let mut delta_right = members_right.clone()/values_right.clone();
 
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
@@ -275,10 +279,12 @@ fn precompute_helper(
     // reduce a * t mod e_left
     let (q, r) = at.clone().div_rem(values_left.clone());
     let a_left = r;
-    let mut b_left = g
+    let mut b_left = Integer::from(1u8);
+    /*g
         .clone()
         .pow_mod(&(q * members_right.clone()), &MODULUS)
         .expect(">= 0");
+        */
     b_left *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
@@ -286,10 +292,10 @@ fn precompute_helper(
     b_left *= proof
         .base
         .clone()
-        .pow_mod(&members_right, &MODULUS)
+        .pow_mod(&(values_right.clone()), &MODULUS)
         .expect(">= 0");
     let proof_left = NonMembershipWitness {
-        exp: a_left,
+        exp: at,
         base: b_left,
     };
 
@@ -301,10 +307,12 @@ fn precompute_helper(
     // reduce a * t mod e_right
     let (q, r) = at.clone().div_rem(values_right.clone());
     let a_right = r;
-    let mut b_right = g
+    let mut b_right = Integer::from(1u8);
+    /*g
         .clone()
         .pow_mod(&(q * members_left.clone()), &MODULUS)
         .expect(">= 0");
+        */
     b_right *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
@@ -312,10 +320,10 @@ fn precompute_helper(
     b_right *= proof
         .base
         .clone()
-        .pow_mod(&members_left, &MODULUS)
+        .pow_mod(&(values_left.clone()), &MODULUS)
         .expect(">= 0");
     let proof_right = NonMembershipWitness {
-        exp: a_right,
+        exp: at,
         base: b_right,
     };
 
@@ -334,6 +342,7 @@ fn precompute_helper(
     assert!(RsaAccumulatorDigest::from(g_left.clone())
         .verify_nonmember(&values_right, proof_right.clone()));
 
+    println!("len1: {}, len2: {}", &values[..split_idx].len(), &values[split_idx..].len());
     assert_eq!(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
         values.len()
@@ -344,6 +353,7 @@ fn precompute_helper(
         proof_left,
         g_right,
     );
+    println!("left ok");
     let r_ret = precompute_helper(
         &values[split_idx..],
         &counts[split_idx..],
@@ -592,7 +602,8 @@ mod test {
         }
 
         #[test]
-        fn test_rsa_accumulator_precompute(values in prop::collection::vec(primes(), 1..10)) {
+        fn test_rsa_accumulator_precompute(values in prop::collection::vec(primes(), 1..50)) {
+            // let values: Vec<_> = values.into_iter().collect();
             let multiset = MultiSet::<Integer>::from(values);
             println!("new test, {:?}, {:?}", multiset.len(), multiset.inner);
             let mut acc = RsaAccumulator::import(multiset.clone());
