@@ -9,7 +9,7 @@ use crate::accumulator::Accumulator;
 
 #[derive(Debug, Default, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
-    inner: HashMap<T, u32>,
+    pub inner: HashMap<T, u32>,
 }
 
 impl Serialize for MultiSet<Integer> {

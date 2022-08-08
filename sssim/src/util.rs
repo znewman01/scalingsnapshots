@@ -1,7 +1,7 @@
 use serde::Serialize;
-use uom::si::information::byte;
+pub use uom::si::information::byte;
 
-type Information = uom::si::u64::Information;
+pub type Information = uom::si::u64::Information;
 
 pub trait DataSized {
     fn size(&self) -> Information;

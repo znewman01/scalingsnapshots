@@ -1,18 +1,19 @@
 use std::{collections::HashMap, num::NonZeroU64};
 
 use crate::{
-    accumulator::{Accumulator, Digest, RsaAccumulator},
+    accumulator::{Accumulator, Digest},
     hash_to_prime::hash_to_prime,
     multiset::MultiSet,
+    util::{byte, DataSized, Information},
 };
 use rug::Integer;
-use serde::Serialize;
 
 use authenticator::{ClientSnapshot, Revision};
+use serde::Serialize;
 
 use crate::{authenticator, log::PackageId};
 
-#[derive(Default, Clone, Debug, Serialize)]
+#[derive(Default, Clone, Debug)]
 pub struct Snapshot<D: Digest> {
     digest: Option<D>,
 }
@@ -25,11 +26,17 @@ impl<D: Digest> Snapshot<D> {
     }
 }
 
+impl<D: Digest> DataSized for Snapshot<D> {
+    fn size(&self) -> Information {
+        Information::new::<byte>(0)
+    }
+}
+
 impl<D> ClientSnapshot for Snapshot<D>
 where
-    D: Digest + Clone + Serialize,
+    D: Digest + Clone + Serialize + std::fmt::Debug,
     <D as Digest>::AppendOnlyWitness: Clone + Serialize,
-    <D as Digest>::Witness: Clone + Serialize,
+    <D as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
 {
     type Id = Option<D>;
     type Diff = (D, Option<D::AppendOnlyWitness>);
@@ -60,8 +67,13 @@ where
         revision: Revision,
         proof: Self::Proof,
     ) -> bool {
+        println!(
+            "p: {:?}, rev: {:?}, d: {:?}, pf: {:?}",
+            package_id, revision, self.digest, proof
+        );
         let encoded = bincode::serialize(package_id).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
+        println!("prime (verify): {:?}", prime);
         match &self.digest {
             None => false,
             Some(d) => d.verify(&prime, revision.0.get().try_into().unwrap(), proof),
@@ -69,7 +81,7 @@ where
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct Authenticator<A>
 where
     A: Accumulator + Default,
@@ -123,20 +135,27 @@ where
 #[allow(unused_variables)]
 impl<A> authenticator::Authenticator<Snapshot<A::Digest>> for Authenticator<A>
 where
-    A: Accumulator + Serialize + Default,
+    A: Accumulator + Serialize + Default + std::fmt::Debug,
     <A as Accumulator>::Digest:
         Clone + Serialize + PartialEq + Eq + std::hash::Hash + std::fmt::Debug,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
 {
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut multiset = MultiSet::<Integer>::default();
         for p in packages {
             let encoded = bincode::serialize(&p).unwrap();
             let prime = hash_to_prime(&encoded).unwrap();
+            println!("prime (import): {:?}", prime);
             multiset.insert(prime);
         }
-        let acc = A::import(multiset);
+        let mut acc = A::import(multiset.clone());
+        println!("acc: {:?}", acc);
+        let digest = acc.digest().clone();
+        for (value, rev) in multiset.iter() {
+            let witness = acc.prove(value, *rev).unwrap();
+            assert!(digest.verify(value, *rev, witness));
+        }
         Self::new(acc)
     }
 
@@ -189,6 +208,16 @@ where
 
         let revision: NonZeroU64 = u64::from(revision).try_into().unwrap();
         (Revision::from(revision), proof)
+    }
+}
+
+impl<A> DataSized for Authenticator<A>
+where
+    A: Accumulator + Default,
+    <A as Accumulator>::Digest: std::fmt::Debug + Eq + PartialEq + std::hash::Hash + Serialize,
+{
+    fn size(&self) -> Information {
+        Information::new::<byte>(0)
     }
 }
 
