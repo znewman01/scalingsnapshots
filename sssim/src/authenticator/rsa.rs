@@ -67,13 +67,8 @@ where
         revision: Revision,
         proof: Self::Proof,
     ) -> bool {
-        println!(
-            "p: {:?}, rev: {:?}, d: {:?}, pf: {:?}",
-            package_id, revision, self.digest, proof
-        );
         let encoded = bincode::serialize(package_id).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
-        println!("prime (verify): {:?}", prime);
         match &self.digest {
             None => false,
             Some(d) => d.verify(&prime, revision.0.get().try_into().unwrap(), proof),
@@ -146,11 +141,9 @@ where
         for p in packages {
             let encoded = bincode::serialize(&p).unwrap();
             let prime = hash_to_prime(&encoded).unwrap();
-            println!("prime (import): {:?}", prime);
             multiset.insert(prime);
         }
         let mut acc = A::import(multiset.clone());
-        println!("acc: {:?}", acc);
         let digest = acc.digest().clone();
         for (value, rev) in multiset.iter() {
             let witness = acc.prove(value, *rev).unwrap();

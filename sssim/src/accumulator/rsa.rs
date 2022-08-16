@@ -177,18 +177,9 @@ impl Digest for RsaAccumulatorDigest {
 
         match witness.member {
             Some(mem_pf) => {
-                println!(
-                    "verify member: {}",
-                    self.verify_member(member, revision, mem_pf.clone())
-                );
-                println!(
-                    "verify nonmember: {}",
-                    RsaAccumulatorDigest::from(mem_pf.0.clone())
-                        .verify_nonmember(member, witness.nonmember.clone())
-                );
                 self.verify_member(member, revision, mem_pf.clone())
-                // && RsaAccumulatorDigest::from(mem_pf.0)
-                //     .verify_nonmember(member, witness.nonmember)
+                 && RsaAccumulatorDigest::from(mem_pf.0)
+                     .verify_nonmember(member, witness.nonmember)
             }
             None => {
                 // Special-case: revision = 0 has no membership proof.
@@ -221,8 +212,6 @@ fn precompute_helper(
     proof: NonMembershipWitness,
     g: Integer,
 ) -> Vec<Witness> {
-    println!("values: {:?}", values);
-    println!("counts: {:?}", counts);
     assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
         panic!("slice len should not be 0");
@@ -342,7 +331,6 @@ fn precompute_helper(
     assert!(RsaAccumulatorDigest::from(g_left.clone())
         .verify_nonmember(&values_right, proof_right.clone()));
 
-    println!("len1: {}, len2: {}", &values[..split_idx].len(), &values[split_idx..].len());
     assert_eq!(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
         values.len()
@@ -353,7 +341,6 @@ fn precompute_helper(
         proof_left,
         g_right,
     );
-    println!("left ok");
     let r_ret = precompute_helper(
         &values[split_idx..],
         &counts[split_idx..],
@@ -573,11 +560,9 @@ mod test {
     proptest! {
         #[test]
         fn test_rsa_accumulator(mut acc: RsaAccumulator, value1 in primes(), value2 in primes()) {
-            println!("start new test");
             prop_assume!(value1 != value2);
             acc.increment(value2.clone());
             for rev in 0..10 {
-                println!("rev: {}", rev);
                 // At the start of this loop, we have exactly `rev` copies of `value` accumulated.
                 if rev > 0 {
                     prop_assert!(acc.prove(&value1, rev - 1).is_none());

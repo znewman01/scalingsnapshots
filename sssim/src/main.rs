@@ -191,7 +191,6 @@ fn main() -> io::Result<()> {
             "mercury_hash_diff".to_string(),
             "merkle".to_string(),
             "rsa".to_string(),
-            "rsa_cached".to_string(),
             "vanilla_tuf".to_string(),
         ],
     };

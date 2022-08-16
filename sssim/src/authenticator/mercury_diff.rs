@@ -52,15 +52,11 @@ impl ClientSnapshot for Snapshot {
     }
 
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in &self.packages {
-            let new_metadata = match diff.packages.get(package_id) {
-                None => {
+        for (package_id, metadata) in &diff.packages {
+            if let Some(old_metadata) = self.packages.get(&package_id) {
+                if metadata.revision < old_metadata.revision {
                     return false;
                 }
-                Some(m) => m,
-            };
-            if new_metadata.revision < metadata.revision {
-                return false;
             }
         }
         true
