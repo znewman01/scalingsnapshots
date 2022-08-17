@@ -449,7 +449,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-E/F/jT/a74PlIqeiRXruxRNUW75O6M8yPnLPcs2iPLA=",
+        "narHash": "sha256-zIaoug4myHt9+nlQLwPWxWUr4yy54vqBIEtzC8XeyP8=",
         "path": "logparser",
         "type": "path"
       },
@@ -467,7 +467,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-tU61urv3KH0xdNhvKp3+XjJIixpLsJ29mXoPvyZ6ITQ=",
+        "narHash": "sha256-FvgMU3JCF3xtFWujmTybZlUirTTYzc3l3zTEmipn1hc=",
         "path": "sssim",
         "type": "path"
       },
