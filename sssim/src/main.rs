@@ -255,7 +255,7 @@ fn main() -> io::Result<()> {
             let filename = format!("{}.sqlite", authenticator_config);
             Path::new(&output_directory).join(filename)
         };
-        let out_db = Connection::open_in_memory().expect("creating SQLite db"); // TODO: not in-memory
+        let out_db = Connection::open(&out_path).expect("creating SQLite db");
         let mut timing_file = {
             let name = format!("timings-{}", authenticator_config.as_str());
             let path = Path::new(&output_directory).join(name);
@@ -304,9 +304,6 @@ fn main() -> io::Result<()> {
             }
             _ => panic!("not valid"),
         };
-        out_db
-            .backup(DB_NAME, out_path, Some(pg))
-            .expect("backing up db");
     }
 
     Ok(())
