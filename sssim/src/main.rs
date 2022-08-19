@@ -2,10 +2,11 @@
 #![cfg_attr(feature = "strict", deny(warnings))]
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use chrono::prelude::*;
 use clap::Parser;
 use rusqlite::{backup, Connection, DatabaseName};
 use serde::Serialize;
@@ -90,7 +91,12 @@ fn write_sqlite(event: Event, conn: &Connection) -> Option<rusqlite::Result<usiz
     ]))
 }
 
-fn run<S, A, X, Y>(events: X, init: Y, out: &Connection) -> rusqlite::Result<()>
+fn run<S, A, X, Y>(
+    events: X,
+    init: Y,
+    out: &Connection,
+    timing_file: &mut File,
+) -> rusqlite::Result<()>
 where
     S: ClientSnapshot + Default + Debug,
     <S as ClientSnapshot>::Diff: Serialize,
@@ -98,6 +104,7 @@ where
     X: BufRead,
     Y: BufRead,
 {
+    writeln!(timing_file, "{} start", Utc::now().to_rfc3339()).expect("can't write?");
     out.execute(
         "CREATE TABLE results (
                  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,9 +161,7 @@ where
             eprintln!("Done initializing!");
         }
     };
-
-    // TODO: write current time to file
-    // TODO: keep track of memory
+    writeln!(timing_file, "{} init-done", Utc::now().to_rfc3339()).expect("can't write?");
 
     let mut simulator = Simulator::new(auth);
     let bar = if console::Term::stderr().is_term() {
@@ -212,6 +217,7 @@ where
             eprintln!("Done simulating!");
         }
     };
+    writeln!(timing_file, "{} done", Utc::now().to_rfc3339()).expect("can't write?");
     Ok(())
 }
 
@@ -245,32 +251,59 @@ fn main() -> io::Result<()> {
     for authenticator_config in authenticator_configs.iter() {
         let events = BufReader::new(File::open(args.events_path.clone())?);
         let init = BufReader::new(File::open(args.init_path.clone())?);
-        let out_db = Connection::open_in_memory().expect("creating SQLite db");
+        let out_path = {
+            let filename = format!("{}.sqlite", authenticator_config);
+            Path::new(&output_directory).join(filename)
+        };
+        let out_db = Connection::open_in_memory().expect("creating SQLite db"); // TODO: not in-memory
+        let mut timing_file = {
+            let name = format!("timings-{}", authenticator_config.as_str());
+            let path = Path::new(&output_directory).join(name);
+            File::create(path)?
+        };
+
         println!("authenticator: {}", authenticator_config);
         match authenticator_config.as_str() {
-            "insecure" => run::<_, authenticator::Insecure, _, _>(events, init, &out_db).unwrap(),
-            "hackage" => run::<_, authenticator::Hackage, _, _>(events, init, &out_db).unwrap(),
+            "insecure" => {
+                run::<_, authenticator::Insecure, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
+            }
+            "hackage" => {
+                run::<_, authenticator::Hackage, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
+            }
             "mercury_diff" => {
-                run::<_, authenticator::MercuryDiff, _, _>(events, init, &out_db).unwrap()
+                run::<_, authenticator::MercuryDiff, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
             }
             "mercury_hash" => {
-                run::<_, authenticator::MercuryHash, _, _>(events, init, &out_db).unwrap()
+                run::<_, authenticator::MercuryHash, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
             }
-            "mercury_hash_diff" => {
-                run::<_, authenticator::MercuryHashDiff, _, _>(events, init, &out_db).unwrap()
+            "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff, _, _>(
+                events,
+                init,
+                &out_db,
+                &mut timing_file,
+            )
+            .unwrap(),
+            "merkle" => {
+                run::<_, authenticator::Merkle, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
             }
-            "merkle" => run::<_, authenticator::Merkle, _, _>(events, init, &out_db).unwrap(),
             "rsa" => run::<_, authenticator::Accumulator<accumulator::rsa::RsaAccumulator>, _, _>(
-                events, init, &out_db,
+                events,
+                init,
+                &out_db,
+                &mut timing_file,
             )
             .unwrap(),
             "vanilla_tuf" => {
-                run::<_, authenticator::VanillaTuf, _, _>(events, init, &out_db).unwrap()
+                run::<_, authenticator::VanillaTuf, _, _>(events, init, &out_db, &mut timing_file)
+                    .unwrap()
             }
             _ => panic!("not valid"),
         };
-        let filename = format!("{}.sqlite", authenticator_config);
-        let out_path = Path::new(&output_directory).join(filename);
         out_db
             .backup(DB_NAME, out_path, Some(pg))
             .expect("backing up db");
