@@ -2,7 +2,7 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "3.5.0"
+      version = "4.32.0"
     }
   }
 
@@ -37,7 +37,7 @@ resource "google_service_account" "default" {
 }
 
 resource "google_storage_bucket_iam_binding" "binding" {
-  bucket = google_storage_bucket.default.name
+  bucket = data.google_storage_bucket.default.name
   role   = "roles/storage.admin"
   members = [
     "serviceAccount:${google_service_account.default.email}",
@@ -45,7 +45,7 @@ resource "google_storage_bucket_iam_binding" "binding" {
 }
 
 resource "google_compute_instance" "default" {
-  name         = "simulator${count.index}"
+  name         = "simulator${count.index}-${replace(local.things[count.index][1], "_", "-")}"
   machine_type = "e2-highcpu-32"
   count        = length(local.things)
 

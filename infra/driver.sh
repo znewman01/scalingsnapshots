@@ -7,12 +7,14 @@ main() {
 
   # Tar up current source, and copy to GCS
   TMPDIR=$(mktemp -d)
+  pushd ../
   git archive \
       --prefix "scaling-tuf/" \
       --output "$TMPDIR/source.tar.gz" \
       HEAD
   gsutil cp "$TMPDIR/source.tar.gz" "gs://$BUCKET/source.tar.gz"
   rm -rf "$TMPDIR"
+  popd
 
   # The infrastructure will just run everything it needs to.
   terraform apply -auto-approve
