@@ -63,7 +63,7 @@ fn write_sqlite(event: Event, conn: &Connection) -> Option<rusqlite::Result<usiz
         .whole_nanoseconds()
         .try_into()
         .unwrap();
-    let statement = conn.prepare_cached(
+    let statement = conn.prepare(
         "
         INSERT INTO results (
              timestamp,
@@ -105,6 +105,7 @@ where
     Y: BufRead,
 {
     writeln!(timing_file, "{} start", Utc::now().to_rfc3339()).expect("can't write?");
+    out.execute("PRAGMA synchronous=OFF", [])?;
     out.execute(
         "CREATE TABLE results (
                  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,10 +174,14 @@ where
     };
     let mut count = 0;
     let mut last_update = Instant::now();
+
+    out.execute("BEGIN", [])?;
     for line in events.lines() {
         count += 1;
         if last_update.elapsed() > Duration::from_secs(1) {
             last_update = Instant::now();
+            out.execute("COMMIT", [])?;
+            out.execute("BEGIN", [])?;
             match &bar {
                 Some(bar) => {
                     bar.set_position(count);
@@ -209,6 +214,7 @@ where
             result?;
         }
     }
+    out.execute("COMMIT", [])?;
     match bar {
         Some(bar) => {
             bar.finish();
@@ -219,11 +225,6 @@ where
     };
     writeln!(timing_file, "{} done", Utc::now().to_rfc3339()).expect("can't write?");
     Ok(())
-}
-
-fn pg(p: backup::Progress) {
-    println!("{}", p.pagecount);
-    println!("{}", p.remaining);
 }
 
 fn main() -> io::Result<()> {
