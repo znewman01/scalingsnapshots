@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use rusqlite::{backup, Connection, DatabaseName};
@@ -38,7 +39,6 @@ struct Event {
     result: ResourceUsage,
 }
 
-const PROGRESS_BAR_INCREMENT: u64 = 100;
 const DB_NAME: DatabaseName = DatabaseName::Main;
 
 fn write_sqlite(event: Event, conn: &Connection) -> Option<rusqlite::Result<usize>> {
@@ -112,14 +112,29 @@ where
         [],
     )?;
 
-    let bar = indicatif::ProgressBar::new(362350);
+    let bar = if console::Term::stderr().is_term() {
+        let bar = indicatif::ProgressBar::new(362350);
+        bar.set_message("Initializing");
+        Some(bar)
+    } else {
+        eprintln!("Initializing");
+        None
+    };
     let mut count = 0;
-    bar.set_message("Initializing");
+    let mut last_update = Instant::now();
     let mut to_import = Vec::<PackageId>::new();
     for line in init.lines() {
         count += 1;
-        if count % PROGRESS_BAR_INCREMENT == 0 {
-            bar.inc(PROGRESS_BAR_INCREMENT);
+        if last_update.elapsed() > Duration::from_secs(1) {
+            last_update = Instant::now();
+            match &bar {
+                Some(bar) => {
+                    bar.set_position(count);
+                }
+                None => {
+                    eprintln!("Packages: {}", count);
+                }
+            };
         }
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let entry: Entry = result.expect("bad log entry");
@@ -131,16 +146,40 @@ where
         }
     }
     let auth = A::batch_import(to_import);
-    bar.finish();
+    match bar {
+        Some(bar) => {
+            bar.finish();
+        }
+        None => {
+            eprintln!("Done initializing!");
+        }
+    };
+
+    // TODO: write current time to file
+    // TODO: keep track of memory
 
     let mut simulator = Simulator::new(auth);
-    let bar = indicatif::ProgressBar::new(2269238);
+    let bar = if console::Term::stderr().is_term() {
+        let bar = indicatif::ProgressBar::new(2269238);
+        bar.set_message("Simulating");
+        Some(bar)
+    } else {
+        None
+    };
     let mut count = 0;
-    bar.set_message("Simulating");
+    let mut last_update = Instant::now();
     for line in events.lines() {
         count += 1;
-        if count % PROGRESS_BAR_INCREMENT == 0 {
-            bar.inc(PROGRESS_BAR_INCREMENT);
+        if last_update.elapsed() > Duration::from_secs(1) {
+            last_update = Instant::now();
+            match &bar {
+                Some(bar) => {
+                    bar.set_position(count);
+                }
+                None => {
+                    eprintln!("Events: {}", count);
+                }
+            };
         }
         let result = serde_json::from_str(&line.expect("reading from file failed"));
         let mut entry: Entry = result.expect("bad log entry");
@@ -165,7 +204,14 @@ where
             result?;
         }
     }
-    bar.finish();
+    match bar {
+        Some(bar) => {
+            bar.finish();
+        }
+        None => {
+            eprintln!("Done simulating!");
+        }
+    };
     Ok(())
 }
 
