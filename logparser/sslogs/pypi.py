@@ -10,14 +10,24 @@ import argparse
 import io
 import json
 import base64
+import sys
+import itertools
+import tempfile
 
-from typing import Any
+from typing import Any, Optional, Iterator
+from pathlib import Path
+
+import tqdm
+
 from google.cloud import bigquery
 
 import sslogs.args
 import sslogs.logs
+import sslogs.goodbye as goodbye
 
 import datetime
+
+_GCP_PROJECT = "zjn-scaling-tuf"
 
 # https://packaging.python.org/guides/analyzing-pypi-package-downloads/
 # Table: bigquery-public-data.pypi.file_downloads
@@ -81,72 +91,132 @@ def _canonicalize_package(package: str) -> str:
     return package.replace("_", "-").replace(".", "-").lower()
 
 
-def main(args: argparse.Namespace):
-    initial_output: io.TextIOBase = args.initial_output
-    output: io.TextIOBase = args.output
-    client = bigquery.Client()
+def log(msg: str):
+    sys.stderr.write(f"{msg}\n")
+    sys.stderr.flush()
 
+
+def _run_initial_query(
+    client: bigquery.Client, start: datetime.datetime
+) -> Iterator[sslogs.logs.LogEntry]:
     # initial output
-    initial_job = client.query(_query_initial(args.start))
+    log("Issuing initial query.")
+    initial_job = client.query(_query_initial(start)).result()
+    log("Initial query complete.")
     seen = set()
-    for row in initial_job:
+    for row in tqdm.tqdm(initial_job, total=initial_job.total_rows):
         package = row[0]
         if package is not None:
             package = _canonicalize_package(package)
             if package in seen:
                 continue
             seen.add(package)
-            entry = sslogs.logs.LogEntry(
-                timestamp=args.start,
+            yield sslogs.logs.LogEntry(
+                timestamp=start,
                 action=sslogs.logs.Publish(package=sslogs.logs.Package(package)),
             )
-            initial_output.write(json.dumps(entry.to_dict()) + "\n")
 
-    download_job = iter(
-        client.query(_query_download(args.start, args.duration, args.limit))
-    )
-    upload_job = iter(
-        client.query(_query_upload(args.start, args.duration, args.limit))
-    )
-    next_upload = next(upload_job)
-    next_download = next(download_job)
 
+def _run_up_down_query(
+    client: bigquery.Client,
+    start: datetime.datetime,
+    duration: datetime.timedelta,
+    limit: Optional[int],
+) -> Iterator[sslogs.logs.LogEntry]:
+    log("Issuing download query.")
+    download_result = client.query(_query_download(start, duration, limit)).result()
+    log("Download query complete.")
+    download_iter = iter(download_result)
+
+    log("Issuing upload query.")
+    upload_result = client.query(_query_upload(start, duration, limit)).result()
+    upload_iter = iter(upload_result)
+    log("Upload query complete.")
+
+    next_upload = next(upload_iter)
+    next_download = next(download_iter)
     # merge-sort ish to do in timestamp order
-    while True:
-        entry = None
-        if next_download is None and next_upload is None:
-            break
-        if next_upload is None or (next_download and next_download[0] < next_upload[0]):
-            user = base64.b64encode(next_download[1]).decode("ascii")
-            package = next_download[2]
-            if package is not None:
-                package = _canonicalize_package(package)
-                entry = sslogs.logs.LogEntry(
-                    timestamp=next_download[0],
-                    action=sslogs.logs.Download(
-                        user=user, package=sslogs.logs.Package(id=package)
-                    ),
-                )
-            try:
-                next_download = next(download_job)
-            except StopIteration:
-                next_download = None
-        else:
-            package = next_upload[1]
-            if package is not None:
-                package = _canonicalize_package(package)
-                entry = sslogs.logs.LogEntry(
-                    timestamp=next_upload[0],
-                    action=sslogs.logs.Publish(
-                        package=sslogs.logs.Package(id=next_upload[1])
-                    ),
-                )
-            try:
-                next_upload = next(upload_job)
-            except StopIteration:
-                next_upload = None
-        if entry is not None:
-            output.write(json.dumps(entry.to_dict()) + "\n")
+    total_rows = download_result.total_rows + upload_result.total_rows
+    log(f"total rows {total_rows}")
+    with tqdm.tqdm(total=total_rows) as pbar:
+        while True:
+            pbar.update(1)
+            entry = None
+            if next_download is None and next_upload is None:
+                break
+            if next_upload is None or (
+                next_download and next_download[0] < next_upload[0]
+            ):
+                user = base64.b64encode(next_download[1]).decode("ascii")
+                package = next_download[2]
+                if package is not None:
+                    package = _canonicalize_package(package)
+                    entry = sslogs.logs.LogEntry(
+                        timestamp=next_download[0],
+                        action=sslogs.logs.Download(
+                            user=user, package=sslogs.logs.Package(id=package)
+                        ),
+                    )
+                try:
+                    next_download = next(download_iter)
+                except StopIteration:
+                    next_download = None
+            else:
+                package = next_upload[1]
+                if package is not None:
+                    package = _canonicalize_package(package)
+                    entry = sslogs.logs.LogEntry(
+                        timestamp=next_upload[0],
+                        action=sslogs.logs.Publish(
+                            package=sslogs.logs.Package(id=next_upload[1])
+                        ),
+                    )
+                try:
+                    next_upload = next(upload_iter)
+                except StopIteration:
+                    next_upload = None
+            if entry is not None:
+                yield entry
+
+
+def write_logs(
+    client: bigquery.Client,
+    initial_output: io.TextIOBase,
+    output: io.TextIOBase,
+    tmpdir: Path,
+    start: datetime.datetime,
+    duration: datetime.timedelta,
+    limit: Optional[int],
+):
+    log("Issuing initial state query.")
+    for entry in _run_initial_query(client, start):
+        initial_output.write(json.dumps(entry.to_dict()) + "\n")
+    log("Initial state written.")
+
+    log("Issuing upload/download queries.")
+    unprocessed = tmpdir / "unprocessed.jsonl"
+    with unprocessed.open("w") as tmpfile:
+        for entry in _run_up_down_query(client, start, duration, limit):
+            tmpfile.write(json.dumps(entry.to_dict()) + "\n")
+
+    log("Post-processing.")
+    with unprocessed.open("r") as tmpfile:
+        goodbye.goodbyeify(tmpfile, output, tmpdir / "goodbye-tmp.json")
+
+
+def main(args: argparse.Namespace):
+    log("BigQuery client thinking really hard about auth, not doing anything yet.")
+    client = bigquery.Client(project=_GCP_PROJECT)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        write_logs(
+            client,
+            args.initial_output,
+            args.output,
+            Path(tmpdir),
+            args.start,
+            args.duration,
+            args.limit,
+        )
 
 
 def add_args(parser: Any):
@@ -157,7 +227,7 @@ def add_args(parser: Any):
         "--start",
         help="Start of the query period",
         type=sslogs.args.parse_time,
-        default=datetime.datetime(2021, 10, 18, 10, 10, tzinfo=datetime.timezone.utc),
+        default=datetime.datetime(2022, 8, 1, 0, 0, tzinfo=datetime.timezone.utc),
     )
     subparser.add_argument(
         "--duration",
@@ -170,4 +240,3 @@ def add_args(parser: Any):
     )
 
     subparser.set_defaults(func=main)
-    sslogs.args.add_input_arg(subparser)
