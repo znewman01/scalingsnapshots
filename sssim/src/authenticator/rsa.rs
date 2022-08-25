@@ -76,11 +76,12 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Authenticator<A>
 where
     A: Accumulator + Default,
-    <A as Accumulator>::Digest: std::fmt::Debug + Serialize + Eq + PartialEq + std::hash::Hash,
+    <A as Accumulator>::Digest:
+        Clone + std::fmt::Debug + Serialize + Eq + PartialEq + std::hash::Hash,
 {
     rsa_acc: A,
     log: Vec<Integer>,
@@ -202,12 +203,17 @@ where
         let revision: NonZeroU64 = u64::from(revision).try_into().unwrap();
         (Revision::from(revision), proof)
     }
+
+    fn name() -> &'static str {
+        "rsa"
+    }
 }
 
 impl<A> DataSized for Authenticator<A>
 where
     A: Accumulator + Default,
-    <A as Accumulator>::Digest: std::fmt::Debug + Eq + PartialEq + std::hash::Hash + Serialize,
+    <A as Accumulator>::Digest:
+        Clone + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + Serialize,
 {
     fn size(&self) -> Information {
         Information::new::<byte>(0)

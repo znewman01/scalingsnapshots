@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {
     package_revisions: HashMap<PackageId, Revision>,
     /// How far into the log has this client read?
@@ -60,7 +60,7 @@ impl ClientSnapshot for Snapshot {
 ///
 /// That is, an authenticator with a
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
     log: Vec<(PackageId, Revision)>,
     package_revisions: HashMap<PackageId, Revision>,
@@ -68,6 +68,10 @@ pub struct Authenticator {
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn name() -> &'static str {
+        "hackage"
+    }
+
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut auth = Self::default();
         for p in packages {

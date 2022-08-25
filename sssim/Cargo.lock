@@ -1137,6 +1137,7 @@ dependencies = [
  "lazy_static",
  "proptest",
  "proptest-derive",
+ "rand",
  "rug",
  "rusqlite",
  "serde",

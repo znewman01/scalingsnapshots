@@ -116,6 +116,10 @@ impl Default for Authenticator {
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn name() -> &'static str {
+        "merkle"
+    }
+
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut nodes = Vec::<(TreeIndex, Node)>::new();
         let mut revisions = HashMap::<PackageId, Revision>::new();
@@ -169,6 +173,13 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             .expect("Proof generation failed.");
 
         (*revision, proof.into())
+    }
+}
+
+impl Clone for Authenticator {
+    fn clone(&self) -> Self {
+        let packages = self.revisions.keys().cloned().collect();
+        authenticator::Authenticator::<Snapshot>::batch_import(packages)
     }
 }
 

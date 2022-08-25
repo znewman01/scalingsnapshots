@@ -178,8 +178,8 @@ impl Digest for RsaAccumulatorDigest {
         match witness.member {
             Some(mem_pf) => {
                 self.verify_member(member, revision, mem_pf.clone())
-                 && RsaAccumulatorDigest::from(mem_pf.0)
-                     .verify_nonmember(member, witness.nonmember)
+                    && RsaAccumulatorDigest::from(mem_pf.0)
+                        .verify_nonmember(member, witness.nonmember)
             }
             None => {
                 // Special-case: revision = 0 has no membership proof.
@@ -256,8 +256,8 @@ fn precompute_helper(
         MembershipWitness(g.clone())
     ));
     assert!(RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone()));
-    let mut delta_left = members_left.clone()/values_left.clone();
-    let mut delta_right = members_right.clone()/values_right.clone();
+    let mut delta_left = members_left.clone() / values_left.clone();
+    let mut delta_right = members_right.clone() / values_right.clone();
 
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
@@ -270,10 +270,10 @@ fn precompute_helper(
     let a_left = r;
     let mut b_left = Integer::from(1u8);
     /*g
-        .clone()
-        .pow_mod(&(q * members_right.clone()), &MODULUS)
-        .expect(">= 0");
-        */
+    .clone()
+    .pow_mod(&(q * members_right.clone()), &MODULUS)
+    .expect(">= 0");
+    */
     b_left *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
@@ -298,10 +298,10 @@ fn precompute_helper(
     let a_right = r;
     let mut b_right = Integer::from(1u8);
     /*g
-        .clone()
-        .pow_mod(&(q * members_left.clone()), &MODULUS)
-        .expect(">= 0");
-        */
+    .clone()
+    .pow_mod(&(q * members_left.clone()), &MODULUS)
+    .expect(">= 0");
+    */
     b_right *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)

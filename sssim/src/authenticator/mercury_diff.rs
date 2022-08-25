@@ -77,7 +77,7 @@ impl ClientSnapshot for Snapshot {
 }
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
     snapshots: HashMap<u64, Snapshot>,
     snapshot: Snapshot,
@@ -85,6 +85,10 @@ pub struct Authenticator {
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn name() -> &'static str {
+        "mercury_diff"
+    }
+
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut snapshot = Snapshot::default();
         for p in packages {

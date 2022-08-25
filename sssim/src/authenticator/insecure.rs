@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {}
 
 impl ClientSnapshot for Snapshot {
@@ -35,11 +35,15 @@ impl ClientSnapshot for Snapshot {
 ///
 /// Useful for testing.
 #[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {}
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {
+    fn name() -> &'static str {
+        "insecure"
+    }
+
     fn batch_import(packages: Vec<PackageId>) -> Self {
         Self {}
     }

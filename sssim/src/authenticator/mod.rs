@@ -84,10 +84,15 @@ pub trait ClientSnapshot {
 
 // Server-side state
 pub trait Authenticator<S: ClientSnapshot>: DataSized {
+    fn name() -> &'static str;
+
     fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
+
+    // TODO: fn get_metadata(&self) -> S;
 
     fn publish(&mut self, package: PackageId);
 
+    // TODO: we can always assume that snapshot_id is latest
     fn request_file(&mut self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
 
     fn batch_import(packages: Vec<PackageId>) -> Self;
