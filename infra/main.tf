@@ -20,11 +20,24 @@ provider "google" {
 
 locals {
   datas = [
-    "gs://zjn-scaling-tuf-data/data/fakedata.tar.gz",
-    "gs://zjn-scaling-tuf-data/data/fakedata2.tar.gz"
+    # "gs://zjn-scaling-tuf-data/data/fakedata.tar.gz",
+    # "gs://zjn-scaling-tuf-data/data/pypi-1m-100000packages.tar.gz",
+    "gs://zjn-scaling-tuf-data/data/pypi-1m-10000packages.tar.gz",
+    "gs://zjn-scaling-tuf-data/data/pypi-1m-1000packages.tar.gz",
+    "gs://zjn-scaling-tuf-data/data/pypi-1m-100packages.tar.gz",
+    # "gs://zjn-scaling-tuf-data/data/pypi-1m.tar.gz"
   ]
-  authenticators = ["insecure", "rsa", "merkle", "mercury_hash", "mercury_diff", "mercury_hash_diff", "vanilla_tuf", "hackage"]
-  things         = setproduct(local.datas, local.authenticators)
+  authenticators = [
+    # "insecure",
+    "rsa",
+    "merkle",
+    # "mercury_hash",
+    # "mercury_diff",
+    # "mercury_hash_diff",
+    # "vanilla_tuf",
+    # "hackage"
+  ]
+  things = setproduct(local.datas, local.authenticators)
 }
 
 data "google_storage_bucket" "default" {
@@ -46,12 +59,13 @@ resource "google_storage_bucket_iam_binding" "binding" {
 
 resource "google_compute_instance" "default" {
   name         = "simulator${count.index}-${replace(local.things[count.index][1], "_", "-")}"
-  machine_type = "e2-highcpu-32"
+  machine_type = "e2-highmem-4"
   count        = length(local.things)
 
   boot_disk {
     initialize_params {
       image = "https://www.googleapis.com/compute/v1/projects/ubuntu-os-pro-cloud/global/images/ubuntu-pro-2204-jammy-v20220810"
+      size  = 25
     }
   }
 

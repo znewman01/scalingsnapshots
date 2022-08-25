@@ -16,6 +16,9 @@ main() {
   rm -rf "$TMPDIR"
   popd
 
+  terraform state list \
+    | grep google_compute_instance \
+    | xargs -n 1 terraform taint
   # The infrastructure will just run everything it needs to.
   terraform apply -auto-approve
 
