@@ -6,7 +6,12 @@ mod mercury_hash_diff;
 mod merkle;
 mod rsa;
 mod vanilla_tuf;
+
 use std::num::NonZeroU64;
+
+use serde::Serialize;
+
+use crate::accumulator::rsa::RsaAccumulator;
 
 pub use hackage::Authenticator as Hackage;
 pub use insecure::Authenticator as Insecure;
@@ -15,7 +20,7 @@ pub use mercury_hash::Authenticator as MercuryHash;
 pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
 pub use merkle::Authenticator as Merkle;
 pub use rsa::Authenticator as Accumulator;
-use serde::Serialize;
+pub type Rsa = Accumulator<RsaAccumulator>;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
 use crate::{log::PackageId, util::DataSized};
@@ -88,7 +93,7 @@ pub trait Authenticator<S: ClientSnapshot>: DataSized {
 
     fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
 
-    // TODO: fn get_metadata(&self) -> S;
+    fn get_metadata(&self) -> S;
 
     fn publish(&mut self, package: PackageId);
 

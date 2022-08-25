@@ -123,6 +123,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             .expect("Should never get a request for a package that's missing.");
         (metadata.revision, ())
     }
+
+    fn get_metadata(&self) -> Snapshot {
+        self.snapshot.clone()
+    }
 }
 
 #[cfg(test)]

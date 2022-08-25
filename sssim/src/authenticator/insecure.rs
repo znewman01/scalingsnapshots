@@ -64,6 +64,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
         (Revision::default(), ())
     }
+
+    fn get_metadata(&self) -> Snapshot {
+        Snapshot::default()
+    }
 }
 
 #[cfg(test)]

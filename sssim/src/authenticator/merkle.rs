@@ -174,6 +174,10 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
         (*revision, proof.into())
     }
+
+    fn get_metadata(&self) -> Snapshot {
+        Snapshot::new(self.tree.get_root())
+    }
 }
 
 impl Clone for Authenticator {

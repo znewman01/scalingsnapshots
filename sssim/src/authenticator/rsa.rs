@@ -83,7 +83,7 @@ where
     <A as Accumulator>::Digest:
         Clone + std::fmt::Debug + Serialize + Eq + PartialEq + std::hash::Hash,
 {
-    rsa_acc: A,
+    acc: A,
     log: Vec<Integer>,
     old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize>, // TODO: consider giving this usize to the client in this snapshot
 }
@@ -100,11 +100,11 @@ where
         + PartialEq
         + std::hash::Hash,
 {
-    fn new(rsa_acc: A) -> Self {
+    fn new(acc: A) -> Self {
         let mut old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize> = Default::default();
-        old_acc_idxs.insert(rsa_acc.digest().clone(), 0);
+        old_acc_idxs.insert(acc.digest().clone(), 0);
         Authenticator {
-            rsa_acc,
+            acc: acc,
             log: vec![],
             old_acc_idxs,
         }
@@ -160,33 +160,33 @@ where
         let snap = match snapshot_id {
             // client had no state, they don't need a proof
             None => {
-                return Some((self.rsa_acc.digest().clone(), None));
+                return Some((self.acc.digest().clone(), None));
             }
             Some(s) => s,
         };
-        if &snap == self.rsa_acc.digest() {
+        if &snap == self.acc.digest() {
             return None;
         }
-        let new_digest = self.rsa_acc.digest().clone();
-        let old_rsa_acc_idx = match self.old_acc_idxs.get(&snap) {
+        let new_digest = self.acc.digest().clone();
+        let old_acc_idx = match self.old_acc_idxs.get(&snap) {
             Some(o) => o,
             None => {
                 panic!("missing accumulator index");
             }
         };
         let proof = self
-            .rsa_acc
-            .prove_append_only_from_vec(&self.log[*old_rsa_acc_idx..]);
+            .acc
+            .prove_append_only_from_vec(&self.log[*old_acc_idx..]);
         Some((new_digest, Some(proof)))
     }
 
     fn publish(&mut self, package: PackageId) {
         let encoded = bincode::serialize(&package).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
-        self.rsa_acc.increment(prime.clone());
+        self.acc.increment(prime.clone());
         self.log.push(prime);
         self.old_acc_idxs
-            .insert(self.rsa_acc.digest().clone(), self.log.len());
+            .insert(self.acc.digest().clone(), self.log.len());
     }
 
     fn request_file(
@@ -197,8 +197,8 @@ where
         let encoded = bincode::serialize(package).unwrap();
         let prime = hash_to_prime(&encoded).unwrap();
 
-        let revision = self.rsa_acc.get(&prime);
-        let proof = self.rsa_acc.prove(&prime, revision).expect("proof failed");
+        let revision = self.acc.get(&prime);
+        let proof = self.acc.prove(&prime, revision).expect("proof failed");
 
         let revision: NonZeroU64 = u64::from(revision).try_into().unwrap();
         (Revision::from(revision), proof)
@@ -206,6 +206,10 @@ where
 
     fn name() -> &'static str {
         "rsa"
+    }
+
+    fn get_metadata(&self) -> Snapshot<A::Digest> {
+        Snapshot::new(self.acc.digest().clone())
     }
 }
 
