@@ -17,13 +17,13 @@ impl std::fmt::Display for MyError {
 
 impl std::error::Error for MyError {}
 
-struct IntegerHasher {
+pub struct IntegerHasher {
     reader: Sha3XofReader,
     result: Vec<u8>,
 }
 
 impl IntegerHasher {
-    fn new(data: &[u8], digits: usize) -> Self {
+    pub fn new(data: &[u8], digits: usize) -> Self {
         // Here, we use Shake256 which is an "extendable output function" (XOF).
         // This is basically a hash function that gives you as many bytes of output
         // as you want. We need a weird number of bytes which depends on `digits`,
@@ -36,7 +36,7 @@ impl IntegerHasher {
         Self { reader, result }
     }
 
-    fn hash(&mut self) -> rug::Integer {
+    pub fn hash(&mut self) -> rug::Integer {
         self.reader.read(&mut self.result);
         rug::Integer::from_digits(&self.result, rug::integer::Order::Lsf)
     }
