@@ -440,7 +440,6 @@ fn main() -> io::Result<()> {
 
     let db = Connection::open(&args.results).expect("creating SQLite db");
     create_tables(&db).unwrap();
-    // db.execute("PRAGMA synchronous=OFF", []).unwrap();
     for authenticator in authenticators.into_iter() {
         println!("authenticator: {}", authenticator);
 
