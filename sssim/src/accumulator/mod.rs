@@ -35,7 +35,7 @@ pub trait Accumulator {
     ) -> <Self::Digest as Digest>::AppendOnlyWitness;
 
     #[must_use]
-    fn prove_append_only(&self, other: &Self) -> Integer;
+    fn prove_append_only(&self, other: &Self) -> <Self::Digest as Digest>::AppendOnlyWitness;
 
     #[must_use]
     fn prove(

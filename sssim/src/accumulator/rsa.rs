@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::collections::HashMap;
+use crate::poke;
 
 use crate::accumulator::{Accumulator, Digest};
 
@@ -167,7 +168,7 @@ impl RsaAccumulatorDigest {
 
 impl Digest for RsaAccumulatorDigest {
     type Witness = Witness;
-    type AppendOnlyWitness = Integer;
+    type AppendOnlyWitness = poke::Proof;
 
     #[must_use]
     fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
@@ -190,12 +191,9 @@ impl Digest for RsaAccumulatorDigest {
 
     #[must_use]
     fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
-        let expected = self
-            .value
-            .clone()
-            .pow_mod(proof, &MODULUS)
-            .expect("non-negative");
-        expected == new_state.value
+        let zku = poke::ZKUniverse { modulus: &MODULUS, lambda: 256};
+        let instance = poke::Instance { w: new_state.value.clone(), u:self.value.clone()};
+        zku.verify(instance, proof.clone())
     }
 }
 
@@ -495,24 +493,28 @@ impl Accumulator for RsaAccumulator {
     }
 
     #[must_use]
-    fn prove_append_only_from_vec(&self, other: &[Integer]) -> Integer {
-        let mut prod: Integer = 1.into();
+    fn prove_append_only_from_vec(&self, other: &[Integer]) -> poke::Proof {
+        let mut prod: Integer = 1u64.into();
         // TODO: convert other into a multiset
         for elem in other {
             prod *= Integer::from(elem);
         }
-        prod
+        let instance = poke::Instance {w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(), u:self.digest.value.clone()};
+        let zku = poke::ZKUniverse{ modulus: &MODULUS, lambda:256};
+        zku.prove(instance, poke::Witness{ x: prod})
     }
 
     #[must_use]
-    fn prove_append_only(&self, other: &Self) -> Integer {
+    fn prove_append_only(&self, other: &Self) -> poke::Proof {
         assert!(self.multiset.is_superset(&other.multiset));
-        let mut prod: Integer = 1.into();
+        let mut prod: Integer = 1u64.into();
         // TODO: not this
         for (elem, count) in self.multiset.difference(&other.multiset) {
             prod *= Integer::from(elem.pow(count));
         }
-        prod
+        let instance = poke::Instance { w:self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(), u: self.digest.value.clone()};
+        let zku = poke::ZKUniverse{ modulus: &MODULUS, lambda:256};
+        zku.prove(instance, poke::Witness{ x: prod})
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {

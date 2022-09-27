@@ -4,35 +4,38 @@
 #![allow(non_snake_case)]
 use crate::hash_to_prime::{hash_to_prime, IntegerHasher};
 use rug::Integer;
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Instance {
-    w: Integer,
-    u: Integer,
+pub struct Instance {
+    // new value
+    pub w: Integer,
+    // base
+    pub u: Integer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Witness {
-    x: Integer,
+pub struct Witness {
+    pub x: Integer,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Proof {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Proof {
     z: Integer,
     Q: Integer,
     r: Integer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ZKUniverse {
-    modulus: Integer,
-    lambda: u64,
+pub struct ZKUniverse<'a> {
+    pub modulus: &'a Integer,
+    pub lambda: u64,
 }
 
-impl ZKUniverse {
+impl<'a> ZKUniverse<'a> {
     fn exp(&self, base: Integer, exp: &Integer) -> Integer {
         return base
-            .pow_mod(exp, &self.modulus)
+            .pow_mod(exp, self.modulus)
             .expect("Non-negative exponent");
     }
 
@@ -43,7 +46,7 @@ impl ZKUniverse {
         loop {
             // TODO: replace with fancier rejection sampling
             let value = hasher.hash();
-            if value < self.modulus {
+            if &value < self.modulus {
                 return value;
             }
         }
@@ -51,7 +54,6 @@ impl ZKUniverse {
 
     fn fiat_shamir2(&self, instance: &Instance, g: &Integer, z: &Integer) -> Integer {
         let data_str = format!("{instance:?}{g:?}{z:?}");
-        assert!(self.lambda == 256); // Assumed by `hash_to_prime`
         hash_to_prime(data_str.as_bytes()).unwrap()
     }
 
@@ -67,11 +69,11 @@ impl ZKUniverse {
         hasher.hash()
     }
 
-    fn prove(&self, instance: Instance, witness: Witness) -> Proof {
+    pub fn prove(&self, instance: Instance, witness: Witness) -> Proof {
         let u = instance.u.clone();
         let w = instance.w.clone();
         let x = witness.x;
-        assert!(u != 0);
+        assert!(u != 0u64);
         assert_eq!(self.exp(u.clone(), &x), w);
 
         // Verifier sends g <-$- G to the Prover
@@ -89,12 +91,12 @@ impl ZKUniverse {
 
         // Prover sends Q = u^q g^(alpha q) and r to the Verifier
         let mut Q = self.exp(u, &q) * self.exp(g, &(alpha * q));
-        Q %= &self.modulus;
+        Q %= self.modulus;
 
         Proof { z, Q, r }
     }
 
-    fn verify(&self, instance: Instance, proof: Proof) -> bool {
+    pub fn verify(&self, instance: Instance, proof: Proof) -> bool {
         let u = instance.u.clone();
         let w = instance.w.clone();
         let Q = proof.Q;
@@ -102,7 +104,7 @@ impl ZKUniverse {
         let z = proof.z;
 
         for value in vec![&u, &w, &Q, &r, &z] {
-            if value == &1 || value == &(self.modulus.clone() - 1) {
+            if value == &1u64 || value == &(self.modulus.clone() - 1u64) {
                 return false;
             }
         }
@@ -116,8 +118,8 @@ impl ZKUniverse {
         let mut lhs = self.exp(Q, &ell) * self.exp(u, &r);
         lhs *= self.exp(g, &(alpha.clone() * r.clone()));
         let mut rhs = w * self.exp(z, &alpha);
-        lhs = lhs % &self.modulus;
-        rhs = rhs % &self.modulus;
+        lhs = lhs % self.modulus;
+        rhs = rhs % self.modulus;
         r < ell && lhs == rhs
     }
 }
@@ -151,10 +153,10 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq)]
-    struct PokeProblem {
+    struct PokeProblem<'a> {
         instance: Instance,
         witness: Witness,
-        universe: ZKUniverse,
+        universe: ZKUniverse<'a>,
     }
 
     use proptest_derive::Arbitrary;
@@ -165,7 +167,7 @@ mod tests {
         Universe,
     }
 
-    impl Arbitrary for PokeProblem {
+    impl<'a> Arbitrary for PokeProblem<'a> {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
@@ -176,8 +178,9 @@ mod tests {
                         return None;
                     }
                     let modulus = p * q;
+                    let modulus: &'static _ = Box::leak(Box::new(modulus));
                     let lambda = 256;
-                    Some(ZKUniverse { modulus, lambda })
+                    Some(ZKUniverse { modulus: &modulus, lambda })
                 })
                 .prop_flat_map(|universe| {
                     (int_mod(universe.modulus.clone()), integers()).prop_filter_map(
@@ -187,7 +190,7 @@ mod tests {
                                 return None;
                             }
                             // We require x > 2^(256 + 1).
-                            let x = x + (Integer::from(2u8) << 256);
+                            let x = x + (Integer::from(2u8) << 256u32);
                             let w = u.clone().pow_mod(&x, &universe.modulus).unwrap();
                             let universe = universe.clone();
                             let instance = Instance { u, w };
