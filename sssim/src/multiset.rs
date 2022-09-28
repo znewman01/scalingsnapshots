@@ -5,8 +5,6 @@ use std::{collections::HashMap, hash::Hash};
 use rug::Integer;
 use serde::{ser::SerializeMap, Serialize};
 
-use crate::accumulator::Accumulator;
-
 #[derive(Debug, Default, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
     pub inner: HashMap<T, u32>,

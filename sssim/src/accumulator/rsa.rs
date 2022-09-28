@@ -1,9 +1,10 @@
+#![allow(dead_code)]
 use crate::multiset::MultiSet;
+use crate::poke;
 use lazy_static::lazy_static;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::collections::HashMap;
-use crate::poke;
 
 use crate::accumulator::{Accumulator, Digest};
 
@@ -191,8 +192,14 @@ impl Digest for RsaAccumulatorDigest {
 
     #[must_use]
     fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
-        let zku = poke::ZKUniverse { modulus: &MODULUS, lambda: 256};
-        let instance = poke::Instance { w: new_state.value.clone(), u:self.value.clone()};
+        let zku = poke::ZKUniverse {
+            modulus: &MODULUS,
+            lambda: 256,
+        };
+        let instance = poke::Instance {
+            w: new_state.value.clone(),
+            u: self.value.clone(),
+        };
         zku.verify(instance, proof.clone())
     }
 }
@@ -254,8 +261,6 @@ fn precompute_helper(
         MembershipWitness(g.clone())
     ));
     assert!(RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone()));
-    let mut delta_left = members_left.clone() / values_left.clone();
-    let mut delta_right = members_right.clone() / values_right.clone();
 
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
@@ -265,13 +270,10 @@ fn precompute_helper(
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_left
     let (q, r) = at.clone().div_rem(values_left.clone());
-    let a_left = r;
-    let mut b_left = Integer::from(1u8);
-    /*g
-    .clone()
-    .pow_mod(&(q * members_right.clone()), &MODULUS)
-    .expect(">= 0");
-    */
+    let mut b_left = g
+        .clone()
+        .pow_mod(&(q * members_right.clone()), &MODULUS)
+        .expect(">= 0");
     b_left *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
@@ -282,7 +284,7 @@ fn precompute_helper(
         .pow_mod(&(values_right.clone()), &MODULUS)
         .expect(">= 0");
     let proof_left = NonMembershipWitness {
-        exp: at,
+        exp: r,
         base: b_left,
     };
 
@@ -293,13 +295,10 @@ fn precompute_helper(
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_right
     let (q, r) = at.clone().div_rem(values_right.clone());
-    let a_right = r;
-    let mut b_right = Integer::from(1u8);
-    /*g
-    .clone()
-    .pow_mod(&(q * members_left.clone()), &MODULUS)
-    .expect(">= 0");
-    */
+    let mut b_right = g
+        .clone()
+        .pow_mod(&(q * members_left.clone()), &MODULUS)
+        .expect(">= 0");
     b_right *= g
         .clone()
         .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
@@ -310,7 +309,7 @@ fn precompute_helper(
         .pow_mod(&(values_left.clone()), &MODULUS)
         .expect(">= 0");
     let proof_right = NonMembershipWitness {
-        exp: at,
+        exp: r,
         base: b_right,
     };
 
@@ -499,9 +498,15 @@ impl Accumulator for RsaAccumulator {
         for elem in other {
             prod *= Integer::from(elem);
         }
-        let instance = poke::Instance {w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(), u:self.digest.value.clone()};
-        let zku = poke::ZKUniverse{ modulus: &MODULUS, lambda:256};
-        zku.prove(instance, poke::Witness{ x: prod})
+        let instance = poke::Instance {
+            w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(),
+            u: self.digest.value.clone(),
+        };
+        let zku = poke::ZKUniverse {
+            modulus: &MODULUS,
+            lambda: 256,
+        };
+        zku.prove(instance, poke::Witness { x: prod })
     }
 
     #[must_use]
@@ -512,9 +517,15 @@ impl Accumulator for RsaAccumulator {
         for (elem, count) in self.multiset.difference(&other.multiset) {
             prod *= Integer::from(elem.pow(count));
         }
-        let instance = poke::Instance { w:self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(), u: self.digest.value.clone()};
-        let zku = poke::ZKUniverse{ modulus: &MODULUS, lambda:256};
-        zku.prove(instance, poke::Witness{ x: prod})
+        let instance = poke::Instance {
+            w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(),
+            u: self.digest.value.clone(),
+        };
+        let zku = poke::ZKUniverse {
+            modulus: &MODULUS,
+            lambda: 256,
+        };
+        zku.prove(instance, poke::Witness { x: prod })
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
