@@ -72,7 +72,7 @@ struct NonMembershipWitness {
 impl NonMembershipWitness {
     fn update(&mut self, value: Integer, new_element: Integer, digest: Integer) {
         // check that c^a * d^x = g
-        assert_eq!(
+        debug_assert_eq!(
             (digest.clone().pow_mod(&self.exp, &MODULUS).unwrap()
                 * self.base.clone().pow_mod(&value, &MODULUS).unwrap())
                 % MODULUS.clone(),
@@ -88,7 +88,7 @@ impl NonMembershipWitness {
         // new_exp * member + _ * value = 1
         let (gcd, s, t) =
             Integer::gcd_cofactors(value.clone(), new_element.clone(), Integer::new());
-        assert_eq!(gcd, 1u8);
+        debug_assert_eq!(gcd, 1u8);
 
         let (q, r) = (self.exp.clone() * t).div_rem(value.clone());
         let new_exp = r;
@@ -103,7 +103,7 @@ impl NonMembershipWitness {
             .clone()
             .pow_mod(&new_element, &MODULUS)
             .expect(">= 0");
-        assert_eq!(
+        debug_assert_eq!(
             (c_hat.pow_mod(&new_exp, &MODULUS).unwrap()
                 * new_base.clone().pow_mod(&value, &MODULUS).unwrap())
                 % MODULUS.clone(),
@@ -217,12 +217,14 @@ fn precompute_helper(
     proof: NonMembershipWitness,
     g: Integer,
 ) -> Vec<Witness> {
-    assert_eq!(values.len(), counts.len());
+    debug_assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
         panic!("slice len should not be 0");
     }
     if values.len() == 1 {
-        assert!(RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values[0], proof.clone()));
+        debug_assert!(
+            RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values[0], proof.clone())
+        );
         return vec![Witness {
             member: Some(MembershipWitness(g)),
             nonmember: proof,
@@ -255,18 +257,20 @@ fn precompute_helper(
             members_right *= member;
         }
     }
-    assert!(RsaAccumulatorDigest::from(g_star.clone()).verify_member(
+    debug_assert!(RsaAccumulatorDigest::from(g_star.clone()).verify_member(
         &members_star,
         1,
         MembershipWitness(g.clone())
     ));
-    assert!(RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone()));
+    debug_assert!(
+        RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone())
+    );
 
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
     let (gcd, s, t) =
         Integer::gcd_cofactors(values_left.clone(), members_right.clone(), Integer::new());
-    assert_eq!(gcd, 1u8);
+    debug_assert_eq!(gcd, 1u8);
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_left
     let (q, r) = at.clone().div_rem(values_left.clone());
@@ -291,7 +295,7 @@ fn precompute_helper(
     // symmetric
     let (gcd, s, t) =
         Integer::gcd_cofactors(values_right.clone(), members_left.clone(), Integer::new());
-    assert_eq!(gcd, 1u8);
+    debug_assert_eq!(gcd, 1u8);
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_right
     let (q, r) = at.clone().div_rem(values_right.clone());
@@ -313,22 +317,22 @@ fn precompute_helper(
         base: b_right,
     };
 
-    assert!(RsaAccumulatorDigest::from(g_left.clone()).verify_member(
+    debug_assert!(RsaAccumulatorDigest::from(g_left.clone()).verify_member(
         &members_left,
         1,
         MembershipWitness(g.clone())
     ));
-    assert!(RsaAccumulatorDigest::from(g_right.clone()).verify_member(
+    debug_assert!(RsaAccumulatorDigest::from(g_right.clone()).verify_member(
         &members_right,
         1,
         MembershipWitness(g.clone())
     ));
-    assert!(RsaAccumulatorDigest::from(g_right.clone())
+    debug_assert!(RsaAccumulatorDigest::from(g_right.clone())
         .verify_nonmember(&values_left, proof_left.clone()));
-    assert!(RsaAccumulatorDigest::from(g_left.clone())
+    debug_assert!(RsaAccumulatorDigest::from(g_left.clone())
         .verify_nonmember(&values_right, proof_right.clone()));
 
-    assert_eq!(
+    debug_assert_eq!(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
         values.len()
     );
@@ -356,7 +360,7 @@ fn precompute(values: &[Integer], counts: &[u32]) -> Vec<Witness> {
 
     // a * 1 + b * e_star = 1
     let (gcd, a, b) = Integer::gcd_cofactors(1u8.into(), e_star.clone(), Integer::new());
-    assert_eq!(gcd, 1u8);
+    debug_assert_eq!(gcd, 1u8);
     let mut base = GENERATOR.clone();
     base.pow_mod_mut(&b, &MODULUS).expect(">= 0");
     let proof = NonMembershipWitness { exp: a, base };
@@ -368,7 +372,7 @@ impl RsaAccumulator {
     //TODO compute all proofs?
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
-        assert!(member >= &0);
+        debug_assert!(member >= &0);
         if revision > self.multiset.get(member) {
             return None;
         }
@@ -406,7 +410,7 @@ impl RsaAccumulator {
 
         let d = GENERATOR.clone().pow_mod(&t, &MODULUS).unwrap();
 
-        assert_eq!(
+        debug_assert_eq!(
             (self.digest.value.clone().pow_mod(&s, &MODULUS).unwrap()
                 * d.clone().pow_mod(&value, &MODULUS).unwrap())
                 % MODULUS.clone(),
@@ -456,7 +460,7 @@ impl Accumulator for RsaAccumulator {
 
     /// O(N)
     fn increment(&mut self, member: Integer) {
-        assert!(member >= 0u8);
+        debug_assert!(member >= 0u8);
 
         // We need to update every membership proof, *except* our own!
         for (value, proof) in self.proof_cache.iter_mut() {
@@ -511,7 +515,7 @@ impl Accumulator for RsaAccumulator {
 
     #[must_use]
     fn prove_append_only(&self, other: &Self) -> poke::Proof {
-        assert!(self.multiset.is_superset(&other.multiset));
+        debug_assert!(self.multiset.is_superset(&other.multiset));
         let mut prod: Integer = 1u64.into();
         // TODO: not this
         for (elem, count) in self.multiset.difference(&other.multiset) {
