@@ -32,6 +32,9 @@ struct Args {
     /// Name of the dataset
     #[clap(long)]
     dataset: Option<String>,
+    /// Number of threads
+    #[clap(long, default_value = "1")]
+    threads: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -416,6 +419,11 @@ where
 
 fn main() -> io::Result<()> {
     let args: Args = Args::parse();
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build_global()
+        .unwrap();
 
     let authenticators: Vec<String> = match args.authenticators {
         Some(authenticators) => authenticators.split(",").map(String::from).collect(),

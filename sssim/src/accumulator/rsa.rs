@@ -2,6 +2,7 @@
 use crate::multiset::MultiSet;
 use crate::poke;
 use lazy_static::lazy_static;
+use rayon::prelude::*;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -211,6 +212,8 @@ pub struct RsaAccumulator {
     proof_cache: HashMap<Integer, Witness>,
 }
 
+static PRECOMPUTE_CHUNK_SIZE: usize = 4;
+
 fn precompute_helper(
     values: &[Integer],
     counts: &[u32],
@@ -336,18 +339,41 @@ fn precompute_helper(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
         values.len()
     );
-    let mut ret = precompute_helper(
-        &values[..split_idx],
-        &counts[..split_idx],
-        proof_left,
-        g_right,
-    );
-    let r_ret = precompute_helper(
-        &values[split_idx..],
-        &counts[split_idx..],
-        proof_right,
-        g_left,
-    );
+    let (mut ret, r_ret) = if values.len() >= PRECOMPUTE_CHUNK_SIZE {
+        rayon::join(
+            || {
+                precompute_helper(
+                    &values[..split_idx],
+                    &counts[..split_idx],
+                    proof_left,
+                    g_right,
+                )
+            },
+            || {
+                precompute_helper(
+                    &values[split_idx..],
+                    &counts[split_idx..],
+                    proof_right,
+                    g_left,
+                )
+            },
+        );
+    } else {
+        (
+            precompute_helper(
+                &values[..split_idx],
+                &counts[..split_idx],
+                proof_left,
+                g_right,
+            ),
+            precompute_helper(
+                &values[split_idx..],
+                &counts[split_idx..],
+                proof_right,
+                g_left,
+            ),
+        )
+    };
     ret.extend_from_slice(&r_ret);
     ret
 }
@@ -463,16 +489,16 @@ impl Accumulator for RsaAccumulator {
         debug_assert!(member >= 0u8);
 
         // We need to update every membership proof, *except* our own!
-        for (value, proof) in self.proof_cache.iter_mut() {
+        self.proof_cache.par_iter_mut().for_each(|(value, proof)| {
             let digest = proof.member.clone().unwrap().0.clone();
             proof
                 .nonmember
                 .update(value.clone(), member.clone(), digest);
             if value == &member {
-                continue;
+                return;
             }
             proof.member.as_mut().unwrap().update(&member);
-        }
+        });
 
         // If this is the first time this value was added, create a new membership proof.
         //
