@@ -168,11 +168,9 @@ impl RsaAccumulatorDigest {
     }
 }
 
-type AppendOnlyWitness = poke::Proof;
-
 impl Digest for RsaAccumulatorDigest {
     type Witness = Witness;
-    type AppendOnlyWitness = AppendOnlyWitness;
+    type AppendOnlyWitness = (Vec<poke::Proof>, Vec<Integer>);
 
     #[must_use]
     fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
@@ -195,15 +193,44 @@ impl Digest for RsaAccumulatorDigest {
 
     #[must_use]
     fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
-        let zku = poke::ZKUniverse {
-            modulus: &MODULUS,
-            lambda: 256,
-        };
-        let instance = poke::Instance {
-            w: new_state.value.clone(),
-            u: self.value.clone(),
-        };
-        zku.verify(instance, proof.clone())
+        let mut cur = self.value.clone();
+        for (inner_proof, value) in Iterator::zip(proof.0.iter(), proof.1.iter()) {
+            let zku = poke::ZKUniverse {
+                modulus: &MODULUS,
+                lambda: 256,
+            };
+            let instance = poke::Instance {
+                w: value.clone(),
+                u: cur,
+            };
+            if !zku.verify(instance, inner_proof.clone()) {
+                return false;
+            }
+            cur = value.clone();
+        }
+        cur == new_state.value
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize)]
+struct SkipListEntry {
+    //list of proofs from node n
+    proofs: Vec<poke::Proof>
+}
+
+impl SkipListEntry {
+    fn add(&mut self, new: poke::Proof) {
+        self.proofs.push(new);
+    }
+
+    fn find_next(&self, offset: usize) -> (poke::Proof, usize){
+        for (i, proof) in self.proofs.iter().enumerate().rev() {
+            if 1 << i <= offset {
+                return (proof.clone(), 1 << i);
+            }
+        }
+        // not found
+        panic!("offset too big")
     }
 }
 
@@ -214,7 +241,8 @@ pub struct RsaAccumulator {
     proof_cache: HashMap<Integer, Witness>,
     digest_history: Vec<RsaAccumulatorDigest>,
     increment_history: Vec<Integer>,
-    append_only_proofs: Vec<Option<AppendOnlyWitness>>,
+    // append_only_proofs: Vec<Option<AppendOnlyWitness>>,
+    append_only_proofs: Vec<SkipListEntry>,
     digests_to_indexes: HashMap<RsaAccumulatorDigest, usize>,
 }
 
@@ -454,6 +482,15 @@ impl RsaAccumulator {
     }
 }
 
+fn find_max_pow(mut index: usize) -> usize {
+    let mut max_pow = 0;
+    while index % 2 == 0 {
+        max_pow += 1;
+        index = index >> 1;
+    }
+    max_pow
+}
+
 impl Accumulator for RsaAccumulator {
     type Digest = RsaAccumulatorDigest;
     #[must_use]
@@ -499,17 +536,19 @@ impl Accumulator for RsaAccumulator {
 
         self.increment_history.push(member.clone());
         // Add a *slot* for the new append-only proof.
-        self.append_only_proofs.push(None);
+        self.append_only_proofs.push(SkipListEntry::default());
         assert_eq!(self.increment_history.len(), self.append_only_proofs.len());
         assert_eq!(self.increment_history.len(), self.digest_history.len());
 
         let mut exponent = Integer::from(1u8);
-        for ((member, proof_slot), old_digest) in Iterator::zip(
-            Iterator::zip(
+        let index = self.increment_history.len();
+        let max_pow = find_max_pow(index);
+
+        for (member, proof_slot, old_digest, cur_index) in itertools::izip!(
                 self.increment_history.iter().rev(),
                 self.append_only_proofs.iter_mut().rev(),
-            ),
-            self.digest_history.iter().rev(),
+                self.digest_history.iter().rev(),
+                0 .. (1 << max_pow)
         ) {
             exponent *= member;
             let instance = poke::Instance {
@@ -520,12 +559,17 @@ impl Accumulator for RsaAccumulator {
                 modulus: &MODULUS,
                 lambda: 256,
             };
-            *proof_slot = Some(zku.prove(
-                instance,
-                poke::Witness {
-                    x: exponent.clone(),
-                },
-            ))
+
+            //check if cur_index is a power of 2 or is equal to 1
+            // (power of 2 - 1 is all 1s)
+            if cur_index != 0 && cur_index & (cur_index - 1) == 0 {
+                proof_slot.add(zku.prove(
+                    instance,
+                    poke::Witness {
+                        x: exponent.clone(),
+                    },
+                ))
+            }
         }
 
         // Update the digest history.
@@ -543,10 +587,18 @@ impl Accumulator for RsaAccumulator {
             panic!("identical");
         }
         let idx = self.digests_to_indexes.get(prefix).unwrap();
-        if let Some(result) = &self.append_only_proofs[*idx] {
-            return result.clone();
+        let mut cur_idx = 0;
+        let mut proof_list = vec![];
+        let mut value_list = vec![];
+
+        while cur_idx < *idx {
+            let (proof, offset) = self.append_only_proofs[cur_idx].find_next(idx - cur_idx);
+            cur_idx += offset;
+            proof_list.push(proof);
+            value_list.push(self.digest_history[cur_idx].value.clone())
         }
-        panic!("missing proof");
+
+        (proof_list, value_list)
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
