@@ -27,15 +27,11 @@ pub trait Accumulator {
 
     fn increment(&mut self, member: Integer);
 
-    // TODO: rationalize prove_append_only's
     #[must_use]
-    fn prove_append_only_from_vec(
+    fn prove_append_only(
         &self,
-        other: &[Integer],
+        other: &Self::Digest,
     ) -> <Self::Digest as Digest>::AppendOnlyWitness;
-
-    #[must_use]
-    fn prove_append_only(&self, other: &Self) -> <Self::Digest as Digest>::AppendOnlyWitness;
 
     #[must_use]
     fn prove(

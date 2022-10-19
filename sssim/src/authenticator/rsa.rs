@@ -168,15 +168,7 @@ where
             return None;
         }
         let new_digest = self.acc.digest().clone();
-        let old_acc_idx = match self.old_acc_idxs.get(&snap) {
-            Some(o) => o,
-            None => {
-                panic!("missing accumulator index");
-            }
-        };
-        let proof = self
-            .acc
-            .prove_append_only_from_vec(&self.log[*old_acc_idx..]);
+        let proof = self.acc.prove_append_only(&snap);
         Some((new_digest, Some(proof)))
     }
 

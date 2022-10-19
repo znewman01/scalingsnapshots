@@ -168,9 +168,11 @@ impl RsaAccumulatorDigest {
     }
 }
 
+type AppendOnlyWitness = poke::Proof;
+
 impl Digest for RsaAccumulatorDigest {
     type Witness = Witness;
-    type AppendOnlyWitness = poke::Proof;
+    type AppendOnlyWitness = AppendOnlyWitness;
 
     #[must_use]
     fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
@@ -210,6 +212,10 @@ pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     multiset: MultiSet<Integer>,
     proof_cache: HashMap<Integer, Witness>,
+    digest_history: Vec<RsaAccumulatorDigest>,
+    increment_history: Vec<Integer>,
+    append_only_proofs: Vec<Option<AppendOnlyWitness>>,
+    digests_to_indexes: HashMap<RsaAccumulatorDigest, usize>,
 }
 
 static PRECOMPUTE_CHUNK_SIZE: usize = 4;
@@ -357,7 +363,7 @@ fn precompute_helper(
                     g_left,
                 )
             },
-        );
+        )
     } else {
         (
             precompute_helper(
@@ -455,35 +461,6 @@ impl Accumulator for RsaAccumulator {
         &self.digest
     }
 
-    // TODO precompute nonmembership proofs
-    fn import(multiset: MultiSet<Integer>) -> Self {
-        // Precompute membership proofs:
-        let mut values = Vec::<Integer>::with_capacity(multiset.len());
-        let mut counts = Vec::<u32>::with_capacity(multiset.len());
-        let mut digest = GENERATOR.clone(); // TODO: repeat less work
-        for (value, count) in multiset.iter() {
-            let exp = Integer::from(value.pow(count));
-            digest.pow_mod_mut(&exp, &MODULUS).unwrap();
-            values.push(value.clone());
-            counts.push(*count);
-        }
-        let mut proofs = precompute(&values, &counts);
-
-        let mut proof_cache: HashMap<Integer, Witness> = Default::default();
-        for _ in 0..values.len() {
-            let value = values.pop().unwrap();
-            let witness = proofs.pop().unwrap();
-            proof_cache.insert(value.clone(), witness);
-        }
-
-        let digest = RsaAccumulatorDigest::from(digest);
-        Self {
-            digest,
-            multiset,
-            proof_cache,
-        }
-    }
-
     /// O(N)
     fn increment(&mut self, member: Integer) {
         debug_assert!(member >= 0u8);
@@ -518,44 +495,58 @@ impl Accumulator for RsaAccumulator {
             .value
             .pow_mod_mut(&member, &MODULUS)
             .expect("member should be >=0");
-        self.multiset.insert(member);
+        self.multiset.insert(member.clone());
+
+        self.increment_history.push(member.clone());
+        // Add a *slot* for the new append-only proof.
+        self.append_only_proofs.push(None);
+        assert_eq!(self.increment_history.len(), self.append_only_proofs.len());
+        assert_eq!(self.increment_history.len(), self.digest_history.len());
+
+        let mut exponent = Integer::from(1u8);
+        for ((member, proof_slot), old_digest) in Iterator::zip(
+            Iterator::zip(
+                self.increment_history.iter().rev(),
+                self.append_only_proofs.iter_mut().rev(),
+            ),
+            self.digest_history.iter().rev(),
+        ) {
+            exponent *= member;
+            let instance = poke::Instance {
+                w: self.digest.value.clone(),
+                u: old_digest.value.clone(),
+            };
+            let zku = poke::ZKUniverse {
+                modulus: &MODULUS,
+                lambda: 256,
+            };
+            *proof_slot = Some(zku.prove(
+                instance,
+                poke::Witness {
+                    x: exponent.clone(),
+                },
+            ))
+        }
+
+        // Update the digest history.
+        self.digest_history.push(self.digest.clone());
+        self.digests_to_indexes
+            .insert(self.digest.clone(), self.digest_history.len() - 1);
     }
 
     #[must_use]
-    fn prove_append_only_from_vec(&self, other: &[Integer]) -> poke::Proof {
-        let mut prod: Integer = 1u64.into();
-        // TODO: convert other into a multiset
-        for elem in other {
-            prod *= Integer::from(elem);
+    fn prove_append_only(
+        &self,
+        prefix: &Self::Digest,
+    ) -> <Self::Digest as Digest>::AppendOnlyWitness {
+        if &self.digest == prefix {
+            panic!("identical");
         }
-        let instance = poke::Instance {
-            w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(),
-            u: self.digest.value.clone(),
-        };
-        let zku = poke::ZKUniverse {
-            modulus: &MODULUS,
-            lambda: 256,
-        };
-        zku.prove(instance, poke::Witness { x: prod })
-    }
-
-    #[must_use]
-    fn prove_append_only(&self, other: &Self) -> poke::Proof {
-        debug_assert!(self.multiset.is_superset(&other.multiset));
-        let mut prod: Integer = 1u64.into();
-        // TODO: not this
-        for (elem, count) in self.multiset.difference(&other.multiset) {
-            prod *= Integer::from(elem.pow(count));
+        let idx = self.digests_to_indexes.get(prefix).unwrap();
+        if let Some(result) = &self.append_only_proofs[*idx] {
+            return result.clone();
         }
-        let instance = poke::Instance {
-            w: self.digest.value.clone().pow_mod(&prod, &MODULUS).unwrap(),
-            u: self.digest.value.clone(),
-        };
-        let zku = poke::ZKUniverse {
-            modulus: &MODULUS,
-            lambda: 256,
-        };
-        zku.prove(instance, poke::Witness { x: prod })
+        panic!("missing proof");
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
@@ -570,6 +561,41 @@ impl Accumulator for RsaAccumulator {
 
     fn get(&self, member: &Integer) -> u32 {
         self.multiset.get(member)
+    }
+
+    // TODO precompute nonmembership proofs
+    fn import(multiset: MultiSet<Integer>) -> Self {
+        // Precompute membership proofs:
+        let mut values = Vec::<Integer>::with_capacity(multiset.len());
+        let mut counts = Vec::<u32>::with_capacity(multiset.len());
+        let mut digest = GENERATOR.clone(); // TODO: repeat less work
+        for (value, count) in multiset.iter() {
+            let exp = Integer::from(value.pow(count));
+            digest.pow_mod_mut(&exp, &MODULUS).unwrap();
+            values.push(value.clone());
+            counts.push(*count);
+        }
+        let mut proofs = precompute(&values, &counts);
+
+        let mut proof_cache: HashMap<Integer, Witness> = Default::default();
+        for _ in 0..values.len() {
+            let value = values.pop().unwrap();
+            let witness = proofs.pop().unwrap();
+            proof_cache.insert(value.clone(), witness);
+        }
+
+        let digest = RsaAccumulatorDigest::from(digest);
+        let mut digests_to_indexes: HashMap<RsaAccumulatorDigest, usize> = Default::default();
+        digests_to_indexes.insert(digest.clone(), 0);
+        Self {
+            digest: digest.clone(),
+            multiset,
+            proof_cache,
+            digest_history: vec![digest],
+            append_only_proofs: vec![],
+            increment_history: vec![],
+            digests_to_indexes,
+        }
     }
 }
 
