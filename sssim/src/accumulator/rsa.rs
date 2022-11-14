@@ -215,7 +215,7 @@ impl Digest for RsaAccumulatorDigest {
 #[derive(Default, Debug, Clone, Serialize)]
 struct SkipListEntry {
     //list of proofs from node n
-    proofs: Vec<poke::Proof>
+    proofs: Vec<poke::Proof>,
 }
 
 impl SkipListEntry {
@@ -223,7 +223,7 @@ impl SkipListEntry {
         self.proofs.push(new);
     }
 
-    fn find_next(&self, offset: usize) -> (poke::Proof, usize){
+    fn find_next(&self, offset: usize) -> (poke::Proof, usize) {
         for (i, proof) in self.proofs.iter().enumerate().rev() {
             if 1 << i <= offset {
                 return (proof.clone(), 1 << i);
@@ -498,6 +498,8 @@ impl Accumulator for RsaAccumulator {
         &self.digest
     }
 
+    /// TODO: implement better `increment_batch`
+
     /// O(N)
     fn increment(&mut self, member: Integer) {
         debug_assert!(member >= 0u8);
@@ -545,10 +547,10 @@ impl Accumulator for RsaAccumulator {
         let max_pow = find_max_pow(index);
 
         for (member, proof_slot, old_digest, cur_index) in itertools::izip!(
-                self.increment_history.iter().rev(),
-                self.append_only_proofs.iter_mut().rev(),
-                self.digest_history.iter().rev(),
-                0 .. (1 << max_pow)
+            self.increment_history.iter().rev(),
+            self.append_only_proofs.iter_mut().rev(),
+            self.digest_history.iter().rev(),
+            0..(1 << max_pow)
         ) {
             exponent *= member;
             let instance = poke::Instance {

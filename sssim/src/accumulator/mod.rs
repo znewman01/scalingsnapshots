@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rug::Integer;
 
 pub mod rsa;
@@ -44,4 +46,24 @@ pub trait Accumulator {
     fn get(&self, member: &Integer) -> u32;
 
     fn import(multiset: MultiSet<Integer>) -> Self;
+}
+
+pub trait BatchDigest: Digest {
+    type BatchWitness;
+
+    fn verify_batch(&self, members: &HashMap<Integer, u32>, witness: Self::BatchWitness) -> bool;
+}
+
+pub trait BatchAccumulator: Accumulator
+where
+    <Self as Accumulator>::Digest: BatchDigest,
+{
+    fn increment_batch(&mut self, members: Vec<Integer>) {
+        members.into_iter().for_each(|m| self.increment(m));
+    }
+
+    fn prove_batch(
+        &mut self,
+        entries: &HashMap<Integer, u32>,
+    ) -> <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness;
 }
