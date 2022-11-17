@@ -7,7 +7,7 @@ mod merkle;
 mod rsa;
 mod vanilla_tuf;
 
-use std::num::NonZeroU64;
+use std::{collections::HashMap, num::NonZeroU64};
 
 use serde::Serialize;
 
@@ -31,6 +31,12 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Revision(pub NonZeroU64);
 
+impl From<usize> for Revision {
+    fn from(revision: usize) -> Self {
+        Self(u64::try_from(revision).unwrap().try_into().unwrap())
+    }
+}
+
 impl From<NonZeroU64> for Revision {
     fn from(revision: NonZeroU64) -> Self {
         Self(revision)
@@ -40,6 +46,29 @@ impl From<NonZeroU64> for Revision {
 impl Default for Revision {
     fn default() -> Self {
         Self::from(NonZeroU64::try_from(1).expect("1 > 0"))
+    }
+}
+
+impl Revision {
+    fn increment(&mut self) {
+        self.0 = NonZeroU64::try_from(self.0.get() + 1).unwrap();
+    }
+}
+
+impl std::ops::Add<usize> for Revision {
+    type Output = Revision;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self::from(self.0.checked_add(rhs.try_into().unwrap()).unwrap())
+    }
+}
+
+impl std::ops::Sub<usize> for Revision {
+    type Output = Revision;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        let num = self.0.get().checked_sub(rhs.try_into().unwrap()).unwrap();
+        Self::from(NonZeroU64::try_from(num).unwrap())
     }
 }
 
@@ -101,6 +130,20 @@ pub trait Authenticator<S: ClientSnapshot>: DataSized {
     fn request_file(&mut self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
 
     fn batch_import(packages: Vec<PackageId>) -> Self;
+}
+
+pub trait BatchClientSnapshot: ClientSnapshot {
+    type BatchProof: DataSized + Clone;
+
+    fn batch_verify(&self, packages: HashMap<PackageId, Revision>, proof: Self::BatchProof)
+        -> bool;
+}
+
+pub trait BatchAuthenticator<S: BatchClientSnapshot>: DataSized {
+    fn batch_prove(
+        &self,
+        packages: Vec<PackageId>,
+    ) -> (HashMap<PackageId, Revision>, S::BatchProof);
 }
 
 #[cfg(test)]
