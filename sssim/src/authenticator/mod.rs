@@ -141,7 +141,7 @@ pub trait BatchClientSnapshot: ClientSnapshot {
 
 pub trait BatchAuthenticator<S: BatchClientSnapshot>: DataSized {
     fn batch_prove(
-        &self,
+        &mut self,
         packages: Vec<PackageId>,
     ) -> (HashMap<PackageId, Revision>, S::BatchProof);
 }

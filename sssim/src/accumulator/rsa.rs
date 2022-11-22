@@ -617,15 +617,16 @@ impl Accumulator for RsaAccumulator {
         self.multiset.get(member)
     }
 
-    // TODO precompute nonmembership proofs
     fn import(multiset: MultiSet<Integer>) -> Self {
         // Precompute membership proofs:
         let mut values = Vec::<Integer>::with_capacity(multiset.len());
         let mut counts = Vec::<u32>::with_capacity(multiset.len());
         let mut digest = GENERATOR.clone(); // TODO: repeat less work
         for (value, count) in multiset.iter() {
-            let exp = Integer::from(value.pow(count));
-            digest.pow_mod_mut(&exp, &MODULUS).unwrap();
+            // let exp = Integer::from(value.pow(count));
+            for _ in 0 .. *count {
+                digest.pow_mod_mut(value, &MODULUS).unwrap();
+            }
             values.push(value.clone());
             counts.push(*count);
         }

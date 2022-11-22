@@ -34,11 +34,11 @@ fn hash_package(package: &PackageId) -> Integer {
     hash_to_prime(&encoded).unwrap()
 }
 
-fn convert_package_counts(package_counts: HashMap<PackageId, Revision>) -> HashMap<Integer, u32> {
-    let hashed_package_counts: HashMap<Integer, u32> = Default::default();
-    for (key, value) in package_counts.into_iter() {
+fn convert_package_counts(package_counts: &HashMap<PackageId, Revision>) -> HashMap<Integer, u32> {
+    let mut hashed_package_counts: HashMap<Integer, u32> = Default::default();
+    for (key, value) in package_counts.iter() {
         let revision: u32 = u64::from(value.0).try_into().unwrap();
-        hashed_package_counts.insert(hash_package(&key), revision);
+        hashed_package_counts.insert(hash_package(key), revision);
     }
     hashed_package_counts
 }
@@ -239,8 +239,8 @@ where
         packages: HashMap<PackageId, Revision>,
         proof: Self::BatchProof,
     ) -> bool {
-        let members = convert_package_counts(packages);
-        self.digest.unwrap().verify_batch(&members, proof)
+        let members = convert_package_counts(&packages);
+        self.digest.as_ref().unwrap().verify_batch(&members, proof)
     }
 }
 
@@ -255,14 +255,14 @@ where
     <<A as Accumulator>::Digest as BatchDigest>::BatchWitness: std::fmt::Debug + Clone + Serialize,
 {
     fn batch_prove(
-        &self,
+        &mut self,
         packages: Vec<PackageId>,
     ) -> (
         HashMap<PackageId, Revision>,
         <Snapshot<A::Digest> as BatchClientSnapshot>::BatchProof,
     ) {
-        let members: HashMap<Integer, u32> = Default::default();
-        let package_revisions: HashMap<PackageId, Revision> = Default::default();
+        let mut members: HashMap<Integer, u32> = Default::default();
+        let mut package_revisions: HashMap<PackageId, Revision> = Default::default();
         for package in packages {
             let prime = hash_package(&package);
             let revision: u32 = self.acc.get(&prime);
@@ -315,7 +315,7 @@ where
 #[derivative(Clone(bound = "D: Clone, D::AppendOnlyWitness: Clone, CatchUpToEODProof<D>: Clone"))]
 #[derivative(Default)]
 #[derive(Serialize)]
-struct PoolDiff<D: BatchDigest>
+pub struct PoolDiff<D: BatchDigest>
 where
     D::AppendOnlyWitness: Serialize,
     D::BatchWitness: Serialize,
@@ -339,37 +339,29 @@ where
         }
     }
 
-    fn for_next_day(rest_of_current_day: Vec<PackageId>, current_day_final_digest: ()) -> Self {
-        Self {
-            rest_of_current_day,
-            ..Default::default()
-        }
-    }
 }
 
-impl<D> PoolSnapshot<D>
+impl<D: Clone> PoolSnapshot<D>
 where
     D: BatchDigest,
-    D::BatchWitness: Serialize,
+    D::BatchWitness: Serialize + Clone,
 {
     fn validate_catch_up_proof(
         &self,
-        catch_up_proof: CatchUpToEODProof<D>,
-        rest_of_current_day: Vec<PackageId>,
+        catch_up_proof: &CatchUpToEODProof<D>,
+        rest_of_current_day: &Vec<PackageId>,
     ) -> Result<D, ()> {
         let hashed_package_counts =
-            convert_package_counts(catch_up_proof.bod_package_counts.clone());
-        if !self.inner.digest.unwrap().verify_batch(
+            convert_package_counts(&catch_up_proof.bod_package_counts);
+        if !self.inner.digest.as_ref().unwrap().verify_batch(
             &hashed_package_counts,
-            catch_up_proof.bod_package_membership_witness,
+            catch_up_proof.bod_package_membership_witness.clone(),
         ) {
             return Err(());
         }
-        let mut package_counts = catch_up_proof.bod_package_counts;
+        let mut package_counts = catch_up_proof.bod_package_counts.clone();
 
-        let mut additions = self.pool.clone();
-        additions.append(&mut rest_of_current_day);
-        for package in additions {
+        for package in self.pool.iter().chain(rest_of_current_day) {
             match package_counts.get_mut(&package) {
                 Some(r) => {
                     r.increment();
@@ -379,15 +371,15 @@ where
                 }
             }
         }
-        let hashed_package_counts = convert_package_counts(package_counts);
+        let hashed_package_counts = convert_package_counts(&package_counts);
         if !catch_up_proof.eod_digest.verify_batch(
             &hashed_package_counts,
-            catch_up_proof.eod_package_membership_witness,
+            catch_up_proof.eod_package_membership_witness.clone(),
         ) {
             return Err(());
         }
         // TODO: check bod->eod append only
-        Ok(catch_up_proof.eod_digest)
+        Ok(catch_up_proof.eod_digest.clone())
     }
 }
 
@@ -403,10 +395,9 @@ where
     type Proof = D::Witness;
 
     fn id(&self) -> Self::Id {
-        Some((self.inner.digest.unwrap().clone(), self.pool.len()))
+        Some((self.inner.digest.as_ref().unwrap().clone(), self.pool.len()))
     }
 
-    fn update(&mut self, diff: Self::Diff) {
         let eod_digest: D = match diff.current_day_final_digest {
             Some(catch_up_proof) => catch_up_proof.eod_digest, // The next digest is ready; we may want to update to that.
             None => {
@@ -426,14 +417,14 @@ where
 
     // TODO: special-case for RSA accumulators
     fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        match (diff.current_day_final_digest, diff.latest_digest) {
+        match (diff.current_day_final_digest.as_ref(), diff.latest_digest.as_ref()) {
             (Some(catch_up_proof), Some(latest_digest)) => {
                 if let Ok(eod_digest) =
-                    self.validate_catch_up_proof(catch_up_proof, diff.rest_of_current_day)
+                    self.validate_catch_up_proof(catch_up_proof, &diff.rest_of_current_day)
                 {
                     let eod_snapshot = Snapshot::from(eod_digest);
                     let (d, w) = latest_digest;
-                    if !eod_snapshot.check_no_rollback(&(d, Some(w))) {
+                    if !eod_snapshot.check_no_rollback(&(d.clone(), Some(w.clone()))) {
                         return false;
                     }
                 } else {
@@ -442,7 +433,7 @@ where
             }
             (Some(catch_up_proof), None) => {
                 if self
-                    .validate_catch_up_proof(catch_up_proof, diff.rest_of_current_day)
+                    .validate_catch_up_proof(catch_up_proof, &diff.rest_of_current_day)
                     .is_err()
                 {
                     return false;
@@ -462,7 +453,7 @@ where
         revision: Revision,
         proof: Self::Proof,
     ) -> bool {
-        let mut bod_revision = revision - self.pool.iter().filter(|p| p == &package_id).count();
+        let bod_revision = revision - self.pool.iter().filter(|p| p == &package_id).count();
         self.inner
             .verify_membership(package_id, bod_revision, proof)
     }
@@ -520,8 +511,8 @@ where
     <<A as Accumulator>::Digest as BatchDigest>::BatchWitness: Serialize + Clone + std::fmt::Debug,
 {
     fn batch_import(packages: Vec<PackageId>) -> Self {
-        let inner = Authenticator::<A>::batch_import(packages);
-        let (eod_package_counts, eod_package_membership_witness) = inner.batch_prove(packages);
+        let mut inner = Authenticator::<A>::batch_import(packages.clone());
+        let (eod_package_counts, eod_package_membership_witness) = inner.batch_prove(packages.clone());
         let epoch: Epoch<<A as Accumulator>::Digest> = Epoch {
             packages,
             eod_digest: <A as Accumulator>::Digest::default(),
@@ -530,7 +521,7 @@ where
             bod_package_membership_witness: eod_package_membership_witness.clone(), // total lie but it typechecks
             eod_package_membership_witness,
         };
-        let past_epochs = vec![epoch];
+        let past_epochs = vec![epoch.clone()];
         let mut epoch_idxs_by_digest = HashMap::default();
         epoch_idxs_by_digest.insert(epoch.eod_digest.clone(), 0);
         Self {
@@ -554,11 +545,11 @@ where
             if id_idx == self.current_pool.len() {
                 return None;
             }
-            return Some(PoolDiff::for_current_day(self.current_pool));
+            return Some(PoolDiff::for_current_day(self.current_pool.clone()));
         }
 
         let epoch_idx = *self.epoch_idxs_by_digest.get(&digest).unwrap();
-        let epoch = self.past_epochs[epoch_idx];
+        let epoch = &self.past_epochs[epoch_idx];
         let rest_of_current_day = epoch.packages[id_idx..].to_vec().clone();
 
         if (epoch_idx + 1) == self.past_epochs.len() {
@@ -569,23 +560,23 @@ where
             Some(PoolDiff {
                 rest_of_current_day,
                 current_day_final_digest: Some(CatchUpToEODProof::from_epoch(
-                    epoch,
+                    epoch.clone(),
                     next_digest.clone(),
                 )),
                 latest_digest: None,
-                latest_pool: self.current_pool,
+                latest_pool: self.current_pool.clone(),
             })
         } else {
             // >one day behind
             // get *append only* from eod_digest to latest_digest
-            let next_digest = self.past_epochs[epoch_idx + 1].eod_digest;
-            let append_only_witness = self.inner.acc.prove_append_only(&next_digest);
+            let next_digest = &self.past_epochs[epoch_idx + 1].eod_digest;
+            let append_only_witness = self.inner.acc.prove_append_only(next_digest);
             let latest_digest = Some((self.inner.acc.digest().clone(), append_only_witness));
             Some(PoolDiff {
                 rest_of_current_day,
-                current_day_final_digest: Some(CatchUpToEODProof::from_epoch(epoch, next_digest)),
+                current_day_final_digest: Some(CatchUpToEODProof::from_epoch(epoch.clone(), next_digest.clone())),
                 latest_digest,
-                latest_pool: self.current_pool,
+                latest_pool: self.current_pool.clone(),
             })
         }
     }
@@ -616,7 +607,7 @@ where
         let snapshot: Snapshot<A::Digest> = Snapshot::new(self.inner.acc.digest().clone());
         PoolSnapshot {
             inner: snapshot,
-            pool: self.current_pool,
+            pool: self.current_pool.clone(),
         }
     }
 }
@@ -640,10 +631,10 @@ where
             PackageId,
             <<A as Accumulator>::Digest as Digest>::Witness,
         > = Default::default();
-        for package in self.current_pool {
+        for package in &self.current_pool {
             let (revision, proof) = self.inner.request_file(Default::default(), &package);
-            bod_package_counts.insert(package, revision);
-            bod_membership_witnesses.insert(package, proof);
+            bod_package_counts.insert(package.clone(), revision);
+            bod_membership_witnesses.insert(package.clone(), proof);
         }
         let bod_batch_membership_witness = todo!(); // self.inner.aggegrate(bod_membership_witnesses);
 
