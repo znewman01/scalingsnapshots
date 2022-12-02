@@ -7,11 +7,14 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 use crate::{
     authenticator::{self, Revision},
     log::PackageId,
+    util::DataSizeFromSerialize,
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {}
+
+impl DataSizeFromSerialize for Snapshot {}
 
 impl ClientSnapshot for Snapshot {
     type Id = ();
@@ -37,6 +40,8 @@ impl ClientSnapshot for Snapshot {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {}
+
+impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {

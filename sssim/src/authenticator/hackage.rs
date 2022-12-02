@@ -9,6 +9,7 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 use crate::{
     authenticator::{self, Revision},
     log::PackageId,
+    util::DataSizeFromSerialize,
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
@@ -18,6 +19,10 @@ pub struct Snapshot {
     /// How far into the log has this client read?
     high_water_mark: usize,
 }
+
+impl DataSizeFromSerialize for Snapshot {}
+
+impl DataSizeFromSerialize for Vec<(PackageId, Revision)> {}
 
 impl ClientSnapshot for Snapshot {
     type Id = usize;
@@ -65,6 +70,8 @@ pub struct Authenticator {
     log: Vec<(PackageId, Revision)>,
     package_revisions: HashMap<PackageId, Revision>,
 }
+
+impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {

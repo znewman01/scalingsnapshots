@@ -13,6 +13,7 @@ use uom::ConstZero;
 
 use authenticator::{ClientSnapshot, Revision};
 
+use crate::util::DataSizeFromSerialize;
 use crate::{authenticator, log::PackageId, util::DataSized};
 
 static TREE_HEIGHT: usize = 256;
@@ -33,6 +34,8 @@ pub struct Snapshot {
     root: Root,
 }
 
+impl DataSizeFromSerialize for Snapshot {}
+
 impl Snapshot {
     pub fn new(root: Root) -> Self {
         Self { root }
@@ -44,6 +47,8 @@ pub struct Proof {
     #[serde(serialize_with = "smtree_serialize")]
     inner: MerkleProof<Node>,
 }
+
+impl DataSizeFromSerialize for Proof {}
 
 impl From<MerkleProof<Node>> for Proof {
     fn from(inner: MerkleProof<Node>) -> Self {

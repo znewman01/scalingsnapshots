@@ -7,8 +7,10 @@ pub trait DataSized {
     fn size(&self) -> Information;
 }
 
+pub trait DataSizeFromSerialize: Serialize {}
+
 // TODO: we should probably have a derive macro for this
-impl<T: Serialize> DataSized for T {
+impl<T: DataSizeFromSerialize> DataSized for T {
     fn size(&self) -> Information {
         Information::new::<byte>(
             serde_json::to_string(self)
@@ -17,5 +19,11 @@ impl<T: Serialize> DataSized for T {
                 .try_into()
                 .expect("not that big"),
         )
+    }
+}
+
+impl DataSized for () {
+    fn size(&self) -> Information {
+        uom::ConstZero::ZERO
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     accumulator::{Accumulator, BatchAccumulator, BatchDigest, Digest},
     hash_to_prime::hash_to_prime,
     multiset::MultiSet,
-    util::{byte, DataSized, Information},
+    util::{byte, DataSizeFromSerialize, DataSized, Information},
 };
 use rug::Integer;
 
@@ -17,7 +17,7 @@ use crate::{authenticator, log::PackageId};
 
 use super::{BatchAuthenticator, BatchClientSnapshot};
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot<D: Digest> {
     digest: Option<D>,
 }
@@ -58,11 +58,18 @@ impl<D: Digest> DataSized for Snapshot<D> {
     }
 }
 
+impl<D> DataSizeFromSerialize for (D, Option<D::AppendOnlyWitness>)
+where
+    D: Serialize + Digest,
+    D::AppendOnlyWitness: Serialize,
+{
+}
+
 impl<D> ClientSnapshot for Snapshot<D>
 where
     D: Digest + Clone + Serialize + std::fmt::Debug,
     <D as Digest>::AppendOnlyWitness: Clone + Serialize,
-    <D as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
+    <D as Digest>::Witness: Clone + Serialize + std::fmt::Debug + DataSized,
 {
     type Id = Option<D>;
     type Diff = (D, Option<D::AppendOnlyWitness>);
@@ -149,7 +156,8 @@ where
     <A as Accumulator>::Digest:
         Clone + Serialize + PartialEq + Eq + std::hash::Hash + std::fmt::Debug,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
+    <<A as Accumulator>::Digest as Digest>::Witness:
+        Clone + Serialize + std::fmt::Debug + DataSized,
 {
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut multiset = MultiSet::<Integer>::default();
@@ -231,9 +239,9 @@ where
 impl<D> BatchClientSnapshot for Snapshot<D>
 where
     D: BatchDigest + Digest + std::fmt::Debug + Clone + Serialize,
-    D::BatchWitness: Serialize + Clone + std::fmt::Debug,
+    D::BatchWitness: Serialize + Clone + std::fmt::Debug + DataSized,
     D::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
-    D::Witness: std::fmt::Debug + Clone + Serialize,
+    D::Witness: std::fmt::Debug + Clone + Serialize + DataSized,
 {
     type BatchProof = D::BatchWitness;
 
@@ -254,8 +262,10 @@ where
         Clone + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + Serialize + BatchDigest,
     <A as Accumulator>::Digest: Digest + std::fmt::Debug + Clone + Serialize,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness: std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness:
+        std::fmt::Debug + Clone + Serialize + DataSized,
+    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness:
+        std::fmt::Debug + Clone + Serialize + DataSized,
 {
     fn batch_prove(
         &mut self,
@@ -277,33 +287,25 @@ where
     }
 }
 
-impl<A> authenticator::Authenticator<Snapshot<A::Digest>> for PoolAuthenticator<A>
-where
-    A: Accumulator + Serialize + std::fmt::Debug,
-    <A as Accumulator>::Digest: BatchDigest + Debug + Serialize + Clone,
-    <<A as Accumulator>::Digest as Digest>::Witness: Serialize + Debug + Clone,
-    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: Serialize + Debug + Clone + DataSized,
-    authenticator::rsa::PoolAuthenticator<A>: DataSized
-{
-    fn name() -> &'static str {
-        "rsa_batched"
-    }
-
-    fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff> {
-
-    }
-}
-
-impl<A> authenticator::PoolAuthenticator<Snapshot<A::Digest>> for PoolAuthenticator<A>
+impl<A> authenticator::PoolAuthenticator<PoolSnapshot<A::Digest>> for PoolAuthenticator<A>
 where
     A: Accumulator + BatchAccumulator + Default + Serialize + std::fmt::Debug,
-    <A as Accumulator>::Digest:
-        Clone + std::fmt::Debug + Eq + PartialEq + std::hash::Hash + Serialize + BatchDigest,
+    <A as Accumulator>::Digest: Clone
+        + std::fmt::Debug
+        + Eq
+        + PartialEq
+        + std::hash::Hash
+        + Serialize
+        + BatchDigest
+        + Default,
     <A as Accumulator>::Digest: Digest + std::fmt::Debug + Clone + Serialize,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::Witness: std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness: std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::Witness:
+        std::fmt::Debug + Clone + Serialize + DataSized,
+    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness:
+        std::fmt::Debug + Clone + Serialize + DataSized,
     PoolAuthenticator<A>: DataSized,
+    PoolDiff<A::Digest>: DataSized,
 {
     fn batch_process(&mut self) {
         let bod_digest = self.inner.acc.digest().clone();
@@ -354,10 +356,46 @@ mod tests {
     // TODO: fix tests
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct PoolSnapshot<D: BatchDigest> {
+#[derive(Default, Clone, Debug, Serialize)]
+pub struct PoolSnapshot<D>
+where
+    D: BatchDigest,
+    Snapshot<D>: Serialize,
+{
     inner: Snapshot<D>,
     pool: Vec<PackageId>,
+}
+
+impl<D> DataSizeFromSerialize for PoolSnapshot<D>
+where
+    D: BatchDigest + Serialize,
+    Snapshot<D>: Serialize,
+{
+}
+
+impl<D> BatchClientSnapshot for PoolSnapshot<D>
+where
+    D: BatchDigest + Clone + std::fmt::Debug + Serialize,
+    <D as Digest>::AppendOnlyWitness: Clone + Serialize,
+    <D as Digest>::Witness: Debug + Clone + Serialize + DataSized,
+    <D as BatchDigest>::BatchWitness: Debug + Clone + Serialize + DataSized,
+    PoolDiff<D>: DataSized,
+{
+    type BatchProof = D::BatchWitness;
+
+    fn batch_verify(
+        &self,
+        packages: HashMap<PackageId, Revision>,
+        proof: Self::BatchProof,
+    ) -> bool {
+        todo!();
+        let members = convert_package_counts(&packages);
+        self.inner
+            .digest
+            .as_ref()
+            .unwrap()
+            .verify_batch(&members, proof)
+    }
 }
 
 #[derive(Serialize, Derivative)]
@@ -399,6 +437,15 @@ where
     current_day_final_digest: Option<CatchUpToEODProof<D>>,
     latest_digest: Option<(D, D::AppendOnlyWitness)>,
     latest_pool: Vec<PackageId>,
+    initial_digest: Option<D>,
+}
+
+impl<D> DataSizeFromSerialize for PoolDiff<D>
+where
+    D: BatchDigest + Serialize,
+    D::AppendOnlyWitness: Serialize,
+    D::BatchWitness: Serialize,
+{
 }
 
 impl<D: BatchDigest> PoolDiff<D>
@@ -407,9 +454,45 @@ where
     D::BatchWitness: Serialize,
     D: Default,
 {
+    fn initial(digest: D, latest_pool: Vec<PackageId>) -> Self {
+        Self {
+            initial_digest: Some(digest),
+            latest_pool,
+            ..Default::default()
+        }
+    }
+
     fn for_current_day(rest_of_current_day: Vec<PackageId>) -> Self {
         Self {
             rest_of_current_day,
+            ..Default::default()
+        }
+    }
+
+    fn for_next_day(
+        rest_of_current_day: Vec<PackageId>,
+        current_day_final_digest: CatchUpToEODProof<D>,
+        latest_pool: Vec<PackageId>,
+    ) -> Self {
+        Self {
+            rest_of_current_day,
+            current_day_final_digest: Some(current_day_final_digest),
+            latest_pool,
+            ..Default::default()
+        }
+    }
+
+    fn for_latter_day(
+        rest_of_current_day: Vec<PackageId>,
+        current_day_final_digest: CatchUpToEODProof<D>,
+        latest_digest: (D, D::AppendOnlyWitness),
+        latest_pool: Vec<PackageId>,
+    ) -> Self {
+        Self {
+            rest_of_current_day,
+            current_day_final_digest: Some(current_day_final_digest),
+            latest_digest: Some(latest_digest),
+            latest_pool,
             ..Default::default()
         }
     }
@@ -417,7 +500,7 @@ where
 
 impl<D: Clone> PoolSnapshot<D>
 where
-    D: BatchDigest,
+    D: BatchDigest + Serialize,
     D::BatchWitness: Serialize + Clone,
 {
     fn validate_catch_up_proof(
@@ -461,7 +544,8 @@ where
     D: Digest + Clone + Serialize + std::fmt::Debug + BatchDigest,
     <D as Digest>::AppendOnlyWitness: Clone + Serialize,
     <D as BatchDigest>::BatchWitness: Clone + Serialize,
-    <D as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
+    <D as Digest>::Witness: Clone + Serialize + std::fmt::Debug + DataSized,
+    PoolDiff<D>: DataSized,
 {
     type Id = Option<(D, usize)>;
     type Diff = PoolDiff<D>;
@@ -586,8 +670,12 @@ where
         + BatchDigest
         + Default,
     <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::Witness: Clone + Serialize + std::fmt::Debug,
-    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness: Serialize + Clone + std::fmt::Debug,
+    <<A as Accumulator>::Digest as Digest>::Witness:
+        Clone + Serialize + std::fmt::Debug + DataSized,
+    <<A as Accumulator>::Digest as BatchDigest>::BatchWitness:
+        Serialize + Clone + std::fmt::Debug + DataSized,
+    PoolDiff<A::Digest>: DataSized,
+    Authenticator<A>: BatchAuthenticator<Snapshot<A::Digest>> + DataSized,
 {
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut inner = Authenticator::<A>::batch_import(packages.clone());
@@ -617,7 +705,8 @@ where
         snapshot_id: <PoolSnapshot<A::Digest> as ClientSnapshot>::Id,
     ) -> Option<PoolDiff<<A as Accumulator>::Digest>> {
         if snapshot_id.is_none() {
-            todo!(); // not pooldiff
+            let (digest, _) = self.inner.refresh_metadata(None).unwrap();
+            return Some(PoolDiff::initial(digest, self.current_pool.clone()));
         }
         let (digest, id_idx) = snapshot_id.unwrap();
 
@@ -637,30 +726,25 @@ where
         } else if (epoch_idx + 2) == self.past_epochs.len() {
             // one day behind
             let next_digest = self.inner.acc.digest();
-            Some(PoolDiff {
+            let current_day_final_digest =
+                CatchUpToEODProof::from_epoch(epoch.clone(), next_digest.clone());
+            Some(PoolDiff::for_next_day(
                 rest_of_current_day,
-                current_day_final_digest: Some(CatchUpToEODProof::from_epoch(
-                    epoch.clone(),
-                    next_digest.clone(),
-                )),
-                latest_digest: None,
-                latest_pool: self.current_pool.clone(),
-            })
+                current_day_final_digest,
+                self.current_pool.clone(),
+            ))
         } else {
             // >one day behind
             // get *append only* from eod_digest to latest_digest
             let next_digest = &self.past_epochs[epoch_idx + 1].eod_digest;
             let append_only_witness = self.inner.acc.prove_append_only(next_digest);
-            let latest_digest = Some((self.inner.acc.digest().clone(), append_only_witness));
-            Some(PoolDiff {
+            let latest_digest = (self.inner.acc.digest().clone(), append_only_witness);
+            Some(PoolDiff::for_latter_day(
                 rest_of_current_day,
-                current_day_final_digest: Some(CatchUpToEODProof::from_epoch(
-                    epoch.clone(),
-                    next_digest.clone(),
-                )),
+                CatchUpToEODProof::from_epoch(epoch.clone(), next_digest.clone()),
                 latest_digest,
-                latest_pool: self.current_pool.clone(),
-            })
+                self.current_pool.clone(),
+            ))
         }
     }
 

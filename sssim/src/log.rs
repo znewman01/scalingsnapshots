@@ -16,6 +16,8 @@ use time::OffsetDateTime;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
+use crate::util::DataSizeFromSerialize;
+
 format_description!(
     simple_dt_8601,
     OffsetDateTime,
@@ -37,6 +39,8 @@ impl From<String> for UserId {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PackageId(pub String);
+
+impl DataSizeFromSerialize for PackageId {}
 
 impl From<PackageId> for String {
     fn from(id: PackageId) -> String {

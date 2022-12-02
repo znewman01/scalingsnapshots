@@ -287,7 +287,7 @@ where
         }
 
         let cdn_size = Information::new::<byte>(0); // TODO: CDN size
-        //TODO: write this function that includes merge_time
+                                                    //TODO: write this function that includes merge_time
         insert_update_result(
             db,
             A::name(),
@@ -569,7 +569,7 @@ where
     S: BatchClientSnapshot + Clone + Default + Debug + DataSized,
     <S as BatchClientSnapshot>::BatchProof: Serialize,
     <S as ClientSnapshot>::Diff: Serialize,
-    A: PoolAuthenticator<S> + Clone + Debug + Authenticator<S>,
+    A: PoolAuthenticator<S> + Clone + Debug,
 {
     static PRECOMPUTE_TRIALS: u16 = 3;
     static UPDATE_TRIALS: u16 = 3;
@@ -644,7 +644,7 @@ fn main() -> io::Result<()> {
             "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff>(dataset, packages, &db),
             "merkle" => run::<_, authenticator::Merkle>(dataset, packages, &db),
             "rsa" => run::<_, authenticator::Rsa>(dataset, packages, &db),
-            "rsa_batch" => run_batch::<BatchClientSnapshot, PoolAuthenticator<BatchClientSnapshot>>(dataset, packages, &db),
+            "rsa_pool" => run_batch::<_, authenticator::RsaPool>(dataset, packages, &db),
             "vanilla_tuf" => run::<_, authenticator::VanillaTuf>(dataset, packages, &db),
             _ => panic!("not valid"),
         }

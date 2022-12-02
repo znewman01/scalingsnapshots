@@ -55,6 +55,7 @@ impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
 where
     S: Default,
     S::Diff: Serialize,
+    Option<S::Diff>: DataSized,
 {
     pub fn new(authenticator: A) -> Self {
         Self {

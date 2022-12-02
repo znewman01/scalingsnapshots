@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::{
     authenticator::{self, ClientSnapshot, Hash, Revision},
     log::PackageId,
+    util::DataSizeFromSerialize,
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
@@ -23,6 +24,8 @@ pub struct Snapshot {
     packages: HashMap<PackageId, Metadata>,
     id: u64,
 }
+
+impl DataSizeFromSerialize for Snapshot {}
 
 /// The mercury-hash client snapshot contains *all* the snapshot state.
 impl ClientSnapshot for Snapshot {
@@ -75,6 +78,8 @@ impl ClientSnapshot for Snapshot {
 pub struct Authenticator {
     snapshot: Snapshot,
 }
+
+impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
 impl authenticator::Authenticator<Snapshot> for Authenticator {

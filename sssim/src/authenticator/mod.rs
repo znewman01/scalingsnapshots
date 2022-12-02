@@ -11,7 +11,7 @@ use std::{collections::HashMap, num::NonZeroU64};
 
 use serde::Serialize;
 
-use crate::accumulator::rsa::RsaAccumulator;
+use crate::{accumulator::rsa::RsaAccumulator, util::DataSizeFromSerialize};
 
 pub use hackage::Authenticator as Hackage;
 pub use insecure::Authenticator as Insecure;
@@ -19,8 +19,8 @@ pub use mercury_diff::Authenticator as MercuryDiff;
 pub use mercury_hash::Authenticator as MercuryHash;
 pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
 pub use merkle::Authenticator as Merkle;
-pub use rsa::Authenticator as Accumulator;
-pub type Rsa = Accumulator<RsaAccumulator>;
+pub type Rsa = rsa::Authenticator<RsaAccumulator>;
+pub type RsaPool = rsa::PoolAuthenticator<RsaAccumulator>;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
 use crate::{log::PackageId, util::DataSized};
@@ -30,6 +30,8 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Revision(pub NonZeroU64);
+
+impl DataSizeFromSerialize for Revision {}
 
 impl From<usize> for Revision {
     fn from(revision: usize) -> Self {
@@ -146,7 +148,7 @@ pub trait BatchAuthenticator<S: BatchClientSnapshot>: DataSized {
     ) -> (HashMap<PackageId, Revision>, S::BatchProof);
 }
 
-pub trait PoolAuthenticator<S: BatchClientSnapshot>: DataSized {
+pub trait PoolAuthenticator<S: BatchClientSnapshot>: DataSized + Authenticator<S> {
     fn batch_process(&mut self);
 }
 

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use crate::multiset::MultiSet;
 use crate::poke;
+use crate::{multiset::MultiSet, util::DataSizeFromSerialize};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
 use rug::{ops::Pow, Integer};
@@ -122,6 +122,8 @@ pub struct Witness {
     nonmember: NonMembershipWitness,
 }
 
+impl DataSizeFromSerialize for Witness {}
+
 impl Witness {
     fn new(member: MembershipWitness, nonmember: NonMembershipWitness) -> Self {
         Witness {
@@ -209,6 +211,47 @@ impl Digest for RsaAccumulatorDigest {
             cur = value.clone();
         }
         cur == new_state.value
+    }
+}
+
+impl DataSizeFromSerialize for HashMap<Integer, Witness> {}
+
+impl BatchDigest for RsaAccumulatorDigest {
+    type BatchWitness = HashMap<Integer, <Self as Digest>::Witness>;
+
+    fn verify_batch(
+        &self,
+        members: &HashMap<Integer, u32>,
+        mut witness: Self::BatchWitness,
+    ) -> bool {
+        // TODO: do better
+        for (member, revision) in members {
+            let proof = match witness.remove(member) {
+                Some(proof) => proof,
+                None => {
+                    return false; // missing proof
+                }
+            };
+            if !self.verify(member, *revision, proof) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+impl BatchAccumulator for RsaAccumulator {
+    fn prove_batch(
+        &mut self,
+        entries: &HashMap<Integer, u32>,
+    ) -> <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness {
+        // TODO: do better
+        let mut proofs = HashMap::default();
+        for (member, revision) in entries {
+            let proof = self.prove(member, *revision).unwrap();
+            proofs.insert(member.clone(), proof);
+        }
+        proofs
     }
 }
 
@@ -656,6 +699,8 @@ impl Accumulator for RsaAccumulator {
 
 #[cfg(test)]
 use proptest::prelude::*;
+
+use super::{BatchAccumulator, BatchDigest};
 
 #[cfg(test)]
 impl Arbitrary for RsaAccumulator {
