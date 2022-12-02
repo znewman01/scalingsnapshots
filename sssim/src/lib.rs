@@ -8,4 +8,4 @@ mod poke;
 pub mod simulator;
 pub mod util;
 
-pub use authenticator::Authenticator;
+pub use authenticator::{Authenticator, BatchAuthenticator, PoolAuthenticator};

@@ -11,11 +11,11 @@ use rusqlite::Connection;
 use serde::Serialize;
 use uom::si::information::byte;
 
-use sssim::authenticator::ClientSnapshot;
+use sssim::authenticator::{BatchClientSnapshot, ClientSnapshot};
 use sssim::log::{Entry, PackageId};
 use sssim::simulator::ResourceUsage;
 use sssim::util::{DataSized, Information};
-use sssim::{authenticator, Authenticator};
+use sssim::{authenticator, Authenticator, PoolAuthenticator};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -111,6 +111,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              server_state_bytes INTEGER,
              cdn_size_bytes     INTEGER,
              batch_size         INTEGER,
+             merge_time         INTEGER,
              cores              INTEGER,
              dataset            TEXT
          )",
@@ -187,6 +188,7 @@ fn insert_update_result(
     server_state: Information,
     cdn_size: Information,
     batch_size: u16,
+    merge_time: u64,
     cores: u16,
     dataset: &Option<String>,
 ) -> rusqlite::Result<usize> {
@@ -202,6 +204,7 @@ fn insert_update_result(
             server_state_bytes,
             cdn_size_bytes,
             batch_size,
+            merge_time,
             cores,
             dataset
         ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ",
@@ -212,6 +215,7 @@ fn insert_update_result(
             server_state_bytes,
             cdn_size_bytes,
             batch_size,
+            merge_time,
             cores,
             dataset
         ],
@@ -254,6 +258,248 @@ fn insert_refresh_result(
     )
 }
 
+fn batch_update_trials<A, S>(
+    num_trials: u16,
+    auth: &A,
+    batch_size: u16,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+) -> rusqlite::Result<()>
+where
+    S: BatchClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as BatchClientSnapshot>::BatchProof: Serialize,
+    A: PoolAuthenticator<S> + Clone + Debug + DataSized + Authenticator<S>,
+{
+    for i in 0..num_trials {
+        let cores = 1;
+        let mut auth = auth.clone();
+        let package_id = PackageId::from("new_package".to_string());
+        let (update_time, _) = Duration::time_fn(|| {
+            auth.publish(package_id);
+        });
+
+        let mut merge_time = Duration::ZERO;
+        if i % batch_size == 0 {
+            (merge_time, _) = Duration::time_fn(|| {
+                auth.batch_process();
+            });
+        }
+
+        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        //TODO: write this function that includes merge_time
+        insert_update_result(
+            db,
+            A::name(),
+            num_packages,
+            update_time,
+            auth.size(),
+            cdn_size,
+            batch_size,
+            merge_time.whole_nanoseconds().try_into().unwrap(),
+            cores,
+            dataset,
+        )?;
+    }
+    Ok(())
+}
+
+fn update_trials<A, S>(
+    num_trials: u16,
+    auth: &A,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+) -> rusqlite::Result<()>
+where
+    S: ClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: Authenticator<S> + Clone + Debug,
+{
+    for _ in 0..num_trials {
+        // TODO: batches: 0/batch_size
+        let batch_size = 1;
+        let cores = 1;
+        let mut auth = auth.clone();
+        let package_id = PackageId::from("new_package".to_string());
+        let (update_time, _) = Duration::time_fn(|| {
+            auth.publish(package_id);
+        });
+
+        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        insert_update_result(
+            db,
+            A::name(),
+            num_packages,
+            update_time,
+            auth.size(),
+            cdn_size,
+            batch_size,
+            Duration::ZERO.whole_nanoseconds().try_into().unwrap(),
+            cores,
+            dataset,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn precompute_trials<A, S>(
+    num_trials: u16,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+    packages: &Vec<PackageId>,
+) -> rusqlite::Result<A>
+where
+    S: ClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: Authenticator<S> + Clone + Debug,
+{
+    let mut auth = None;
+    for _ in 0..num_trials {
+        // TODO: hook for progress reporting in batch_import?
+        let packages = packages.clone();
+        let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
+        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        let cores = 1;
+        insert_precompute_result(
+            db,
+            A::name(),
+            num_packages,
+            precompute_time,
+            inner_auth.size(),
+            cdn_size,
+            cores,
+            dataset,
+        )?;
+        auth.replace(inner_auth);
+    }
+    // auth: A = auth.clone().take().unwrap();
+
+    Ok(auth.unwrap())
+}
+
+fn create_user_state<A, S>(
+    num_trials: u16,
+    auth: &A,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+) -> rusqlite::Result<S>
+where
+    S: ClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: Authenticator<S> + Clone + Debug,
+{
+    let mut user_state_initial: Option<S> = None;
+    for _ in 0..num_trials {
+        let user_state = auth.get_metadata();
+        insert_refresh_result(
+            db,
+            A::name(),
+            num_packages,
+            None,
+            Duration::ZERO,
+            user_state.size(),
+            user_state.size(),
+            dataset,
+        )?;
+        user_state_initial.replace(user_state);
+    }
+    let user_state_initial: S = user_state_initial.take().unwrap();
+    Ok(user_state_initial)
+}
+
+fn refresh_user_state<A, S>(
+    refresh_trials: u16,
+    auth_ref: &A,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+    user_state_initial: S,
+) -> rusqlite::Result<()>
+where
+    S: ClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: Authenticator<S> + Clone + Debug,
+{
+    let mut elapsed_releases = VecDeque::from(vec![0, 1, 10]); // assume sorted
+    let max_entry = elapsed_releases[elapsed_releases.len() - 1];
+    for idx in 0..=max_entry {
+        let mut auth = auth_ref.clone();
+        if idx == elapsed_releases[0] {
+            for _ in 0..refresh_trials {
+                let mut user_state = user_state_initial.clone();
+                let maybe_diff = auth.refresh_metadata(user_state.id());
+                let (bandwidth, user_time) = match maybe_diff {
+                    Some(diff) => {
+                        let bandwidth = diff.size();
+                        let (user_time, _) = Duration::time_fn(|| {
+                            user_state.check_no_rollback(&diff);
+                            user_state.update(diff);
+                        });
+                        (bandwidth, user_time)
+                    }
+                    None => (Information::new::<byte>(0), Duration::ZERO),
+                };
+                insert_refresh_result(
+                    db,
+                    A::name(),
+                    num_packages,
+                    Some(idx),
+                    user_time,
+                    bandwidth,
+                    user_state.size(),
+                    dataset,
+                )?;
+            }
+            elapsed_releases.pop_front();
+            if elapsed_releases.is_empty() {
+                break;
+            }
+        }
+        // TODO: for RSA
+        // - how fast in the same day? batch_size=1million
+        // - how about N days? batch_size=1
+        // - can use many cores
+        let package = PackageId::from(format!("new_package{}", idx));
+        auth.publish(package);
+    }
+    Ok(())
+}
+
+fn download_trials<A, S>(
+    download_trials: u16,
+    auth: A,
+    dataset: &Option<String>,
+    num_packages: usize,
+    db: &Connection,
+    packages: Vec<PackageId>,
+) -> rusqlite::Result<()>
+where
+    S: ClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: Authenticator<S> + Clone + Debug,
+{
+    let mut rng = rand::thread_rng();
+    for _ in 1..download_trials {
+        let mut auth = auth.clone();
+        let user_state = auth.get_metadata();
+        let package = rand::seq::SliceRandom::choose(packages.as_slice(), &mut rng).unwrap();
+
+        let (revision, proof) = auth.request_file(user_state.id(), &package);
+        let bandwidth = proof.size();
+
+        let (user_time, _) =
+            Duration::time_fn(|| user_state.verify_membership(&package, revision, proof));
+
+        insert_download_result(db, A::name(), num_packages, user_time, bandwidth, dataset)?;
+    }
+
+    Ok(())
+}
+
 fn insert_download_result(
     db: &Connection,
     technique: &str,
@@ -293,126 +539,63 @@ where
     static DOWNLOAD_TRIALS: u16 = 3;
 
     let num_packages = packages.len();
-    let mut auth: Option<A> = None;
-    for _ in 0..PRECOMPUTE_TRIALS {
-        // TODO: hook for progress reporting in batch_import?
-        let packages = packages.clone();
-        let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
-        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
-        let cores = 1;
-        insert_precompute_result(
-            db,
-            A::name(),
-            num_packages,
-            precompute_time,
-            inner_auth.size(),
-            cdn_size,
-            cores,
-            dataset,
-        )?;
-        auth.replace(inner_auth);
-    }
-    let auth: A = auth.clone().take().unwrap();
 
-    for _ in 0..UPDATE_TRIALS {
-        // TODO: batches: 0/batch_size
-        let batch_size = 1;
-        let cores = 1;
-        let mut auth = auth.clone();
-        let package_id = PackageId::from("new_package".to_string());
-        let (update_time, _) = Duration::time_fn(|| {
-            auth.publish(package_id);
-        });
-        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
-        insert_update_result(
-            db,
-            A::name(),
-            num_packages,
-            update_time,
-            auth.size(),
-            cdn_size,
-            batch_size,
-            cores,
-            dataset,
-        )?;
-    }
+    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
 
-    let mut user_state_initial: Option<S> = None;
-    for _ in 0..REFRESH_TRIALS {
-        let user_state = auth.get_metadata();
-        insert_refresh_result(
-            db,
-            A::name(),
-            num_packages,
-            None,
-            Duration::ZERO,
-            user_state.size(),
-            user_state.size(),
-            dataset,
-        )?;
-        user_state_initial.replace(user_state);
-    }
-    let user_state_initial: S = user_state_initial.take().unwrap();
+    update_trials(UPDATE_TRIALS, &auth, dataset, num_packages, db)?;
 
-    let mut elapsed_releases = VecDeque::from(vec![0, 1, 10]); // assume sorted
-    {
-        let mut auth = auth.clone();
-        let max_entry = elapsed_releases[elapsed_releases.len() - 1];
-        for idx in 0..=max_entry {
-            if idx == elapsed_releases[0] {
-                for _ in 0..REFRESH_TRIALS {
-                    let mut user_state = user_state_initial.clone();
-                    let maybe_diff = auth.refresh_metadata(user_state.id());
-                    let (bandwidth, user_time) = match maybe_diff {
-                        Some(diff) => {
-                            let bandwidth = diff.size();
-                            let (user_time, _) = Duration::time_fn(|| {
-                                user_state.check_no_rollback(&diff);
-                                user_state.update(diff);
-                            });
-                            (bandwidth, user_time)
-                        }
-                        None => (Information::new::<byte>(0), Duration::ZERO),
-                    };
-                    insert_refresh_result(
-                        db,
-                        A::name(),
-                        num_packages,
-                        Some(idx),
-                        user_time,
-                        bandwidth,
-                        user_state.size(),
-                        dataset,
-                    )?;
-                }
-                elapsed_releases.pop_front();
-                if elapsed_releases.is_empty() {
-                    break;
-                }
-            }
-            // TODO: for RSA
-            // - how fast in the same day? batch_size=1million
-            // - how about N days? batch_size=1
-            // - can use many cores
-            let package = PackageId::from(format!("new_package{}", idx));
-            auth.publish(package);
-        }
-    }
+    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
 
-    let mut rng = rand::thread_rng();
-    for _ in 1..DOWNLOAD_TRIALS {
-        let mut auth = auth.clone();
-        let user_state = auth.get_metadata();
-        let package = rand::seq::SliceRandom::choose(packages.as_slice(), &mut rng).unwrap();
+    refresh_user_state(
+        REFRESH_TRIALS,
+        &auth,
+        dataset,
+        num_packages,
+        db,
+        user_state_initial,
+    )?;
 
-        let (revision, proof) = auth.request_file(user_state.id(), &package);
-        let bandwidth = proof.size();
+    download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
 
-        let (user_time, _) =
-            Duration::time_fn(|| user_state.verify_membership(&package, revision, proof));
+    Ok(())
+}
 
-        insert_download_result(db, A::name(), num_packages, user_time, bandwidth, dataset)?;
-    }
+fn run_batch<S, A>(
+    dataset: &Option<String>,
+    packages: Vec<PackageId>,
+    db: &Connection,
+) -> rusqlite::Result<()>
+where
+    S: BatchClientSnapshot + Clone + Default + Debug + DataSized,
+    <S as BatchClientSnapshot>::BatchProof: Serialize,
+    <S as ClientSnapshot>::Diff: Serialize,
+    A: PoolAuthenticator<S> + Clone + Debug + Authenticator<S>,
+{
+    static PRECOMPUTE_TRIALS: u16 = 3;
+    static UPDATE_TRIALS: u16 = 3;
+    static REFRESH_TRIALS: u16 = 3;
+    static DOWNLOAD_TRIALS: u16 = 3;
+
+    let num_packages = packages.len();
+    //TODO: don't hard code
+    let batch_size: u16 = 5;
+
+    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
+
+    batch_update_trials(UPDATE_TRIALS, &auth, batch_size, dataset, num_packages, db)?;
+
+    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
+
+    refresh_user_state(
+        REFRESH_TRIALS,
+        &auth,
+        dataset,
+        num_packages,
+        db,
+        user_state_initial,
+    )?;
+
+    download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
 
     Ok(())
 }
@@ -461,6 +644,7 @@ fn main() -> io::Result<()> {
             "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff>(dataset, packages, &db),
             "merkle" => run::<_, authenticator::Merkle>(dataset, packages, &db),
             "rsa" => run::<_, authenticator::Rsa>(dataset, packages, &db),
+            "rsa_batch" => run_batch::<BatchClientSnapshot, PoolAuthenticator<BatchClientSnapshot>>(dataset, packages, &db),
             "vanilla_tuf" => run::<_, authenticator::VanillaTuf>(dataset, packages, &db),
             _ => panic!("not valid"),
         }

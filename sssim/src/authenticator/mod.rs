@@ -146,6 +146,10 @@ pub trait BatchAuthenticator<S: BatchClientSnapshot>: DataSized {
     ) -> (HashMap<PackageId, Revision>, S::BatchProof);
 }
 
+pub trait PoolAuthenticator<S: BatchClientSnapshot>: DataSized {
+    fn batch_process(&mut self);
+}
+
 #[cfg(test)]
 pub(in crate) mod tests {
     use super::*;

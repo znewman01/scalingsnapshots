@@ -180,7 +180,10 @@ mod tests {
                     let modulus = p * q;
                     let modulus: &'static _ = Box::leak(Box::new(modulus));
                     let lambda = 256;
-                    Some(ZKUniverse { modulus: &modulus, lambda })
+                    Some(ZKUniverse {
+                        modulus: &modulus,
+                        lambda,
+                    })
                 })
                 .prop_flat_map(|universe| {
                     (int_mod(universe.modulus.clone()), integers()).prop_filter_map(

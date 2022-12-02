@@ -624,7 +624,7 @@ impl Accumulator for RsaAccumulator {
         let mut digest = GENERATOR.clone(); // TODO: repeat less work
         for (value, count) in multiset.iter() {
             // let exp = Integer::from(value.pow(count));
-            for _ in 0 .. *count {
+            for _ in 0..*count {
                 digest.pow_mod_mut(value, &MODULUS).unwrap();
             }
             values.push(value.clone());
