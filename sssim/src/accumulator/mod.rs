@@ -62,8 +62,11 @@ where
         members.into_iter().for_each(|m| self.increment(m));
     }
 
-    fn prove_batch(
+    fn prove_batch<I: IntoIterator<Item = Integer>>(
         &mut self,
-        entries: &HashMap<Integer, u32>,
-    ) -> <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness;
+        entries: I,
+    ) -> (
+        HashMap<Integer, u32>,
+        <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness,
+    );
 }

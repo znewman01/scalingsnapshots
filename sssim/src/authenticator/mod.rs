@@ -7,7 +7,10 @@ mod merkle;
 mod rsa;
 mod vanilla_tuf;
 
-use std::{collections::HashMap, num::NonZeroU64};
+use std::{
+    collections::HashMap,
+    num::{NonZeroU64, TryFromIntError},
+};
 
 use serde::Serialize;
 
@@ -54,6 +57,11 @@ impl Default for Revision {
 impl Revision {
     fn increment(&mut self) {
         self.0 = NonZeroU64::try_from(self.0.get() + 1).unwrap();
+    }
+
+    fn decrement(&mut self) -> Result<(), TryFromIntError> {
+        self.0 = NonZeroU64::try_from(self.0.get() + 1)?;
+        Ok(())
     }
 }
 

@@ -241,17 +241,23 @@ impl BatchDigest for RsaAccumulatorDigest {
 }
 
 impl BatchAccumulator for RsaAccumulator {
-    fn prove_batch(
+    fn prove_batch<I: IntoIterator<Item = Integer>>(
         &mut self,
-        entries: &HashMap<Integer, u32>,
-    ) -> <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness {
+        entries: I,
+    ) -> (
+        HashMap<Integer, u32>,
+        <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness,
+    ) {
         // TODO: do better
-        let mut proofs = HashMap::default();
-        for (member, revision) in entries {
-            let proof = self.prove(member, *revision).unwrap();
-            proofs.insert(member.clone(), proof);
+        let mut counts: HashMap<Integer, u32> = Default::default();
+        let mut proofs: HashMap<Integer, <Self::Digest as Digest>::Witness> = Default::default();
+        for member in entries {
+            let revision = self.get(&member);
+            let proof = self.prove(&member, revision).unwrap();
+            counts.insert(member.clone(), revision);
+            proofs.insert(member, proof);
         }
-        proofs
+        (counts, proofs)
     }
 }
 
@@ -282,6 +288,7 @@ pub struct RsaAccumulator {
     digest: RsaAccumulatorDigest,
     multiset: MultiSet<Integer>,
     proof_cache: HashMap<Integer, Witness>,
+    nonmember_proof_cache: HashMap<Integer, NonMembershipWitness>,
     digest_history: Vec<RsaAccumulatorDigest>,
     increment_history: Vec<Integer>,
     // append_only_proofs: Vec<Option<AppendOnlyWitness>>,
@@ -490,7 +497,7 @@ impl RsaAccumulator {
     }
 
     #[must_use]
-    fn prove_nonmember(&self, value: &Integer) -> Option<NonMembershipWitness> {
+    fn prove_nonmember_uncached(&self, value: &Integer) -> Option<NonMembershipWitness> {
         // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
         if self.multiset.get(value) != 0 {
             return None; // value is a member!
@@ -522,6 +529,18 @@ impl RsaAccumulator {
         );
 
         Some(NonMembershipWitness { exp: s, base: d })
+    }
+
+    #[must_use]
+    fn prove_nonmember(&mut self, value: &Integer) -> Option<NonMembershipWitness> {
+        if let Some(proof) = self.nonmember_proof_cache.get(value) {
+            return Some(proof.clone());
+        }
+        self.prove_nonmember_uncached(value).map(|proof| {
+            self.nonmember_proof_cache
+                .insert(value.clone(), proof.clone());
+            proof
+        })
     }
 }
 
@@ -621,6 +640,9 @@ impl Accumulator for RsaAccumulator {
         self.digest_history.push(self.digest.clone());
         self.digests_to_indexes
             .insert(self.digest.clone(), self.digest_history.len() - 1);
+
+        // Invalidate the nonmembership proof cache.
+        self.nonmember_proof_cache = Default::default();
     }
 
     #[must_use]
@@ -689,6 +711,7 @@ impl Accumulator for RsaAccumulator {
             digest: digest.clone(),
             multiset,
             proof_cache,
+            nonmember_proof_cache: Default::default(),
             digest_history: vec![digest],
             append_only_proofs: vec![],
             increment_history: vec![],

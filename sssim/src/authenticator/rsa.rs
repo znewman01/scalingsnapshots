@@ -10,7 +10,7 @@ use crate::{
 };
 use rug::Integer;
 
-use authenticator::{Authenticator as _, ClientSnapshot, Revision};
+use authenticator::{ClientSnapshot, Revision};
 use serde::Serialize;
 
 use crate::{authenticator, log::PackageId};
@@ -274,16 +274,23 @@ where
         HashMap<PackageId, Revision>,
         <Snapshot<A::Digest> as BatchClientSnapshot>::BatchProof,
     ) {
-        let mut members: HashMap<Integer, u32> = Default::default();
+        let package_keys: HashMap<PackageId, Integer> = packages
+            .into_iter()
+            .map(|p| {
+                let h = hash_package(&p);
+                (p, h)
+            })
+            .collect();
+        let (counts, batch_proof): (HashMap<Integer, u32>, _) =
+            self.acc.prove_batch(package_keys.values().cloned());
         let mut package_revisions: HashMap<PackageId, Revision> = Default::default();
-        for package in packages {
-            let prime = hash_package(&package);
-            let revision: u32 = self.acc.get(&prime);
-            members.insert(prime, revision);
-            let revision: Revision = usize::try_from(revision).unwrap().try_into().unwrap();
+        for (package, package_key) in package_keys {
+            let count: u32 = *counts.get(&package_key).unwrap();
+            let count = NonZeroU64::try_from(u64::from(count)).unwrap();
+            let revision: Revision = count.try_into().unwrap();
             package_revisions.insert(package, revision);
         }
-        (package_revisions, self.acc.prove_batch(&members))
+        (package_revisions, batch_proof)
     }
 }
 
@@ -308,41 +315,27 @@ where
     PoolDiff<A::Digest>: DataSized,
 {
     fn batch_process(&mut self) {
-        let bod_digest = self.inner.acc.digest().clone();
-        let mut bod_package_counts: HashMap<PackageId, Revision> = Default::default();
-        let mut bod_membership_witnesses: HashMap<
-            PackageId,
-            <<A as Accumulator>::Digest as Digest>::Witness,
-        > = Default::default();
-        for package in &self.current_pool {
-            let (revision, proof) = self.inner.request_file(Default::default(), &package);
-            bod_package_counts.insert(package.clone(), revision);
-            bod_membership_witnesses.insert(package.clone(), proof);
+        let mut pool_counts: HashMap<PackageId, usize> = Default::default();
+        for package in self.current_pool.clone() {
+            *pool_counts.entry(package).or_default() += 1;
         }
-        let bod_batch_membership_witness = todo!(); // self.inner.aggegrate(bod_membership_witnesses);
+        let pool_packages: Vec<_> = pool_counts.keys().cloned().collect();
 
-        //self.inner.increment_batch(self.current_pool);
+        let bod_digest = self.inner.acc.digest().clone();
+        let (bod_package_counts, bod_batch_witness) = self.inner.batch_prove(pool_packages.clone());
+
+        // TODO: self.inner.increment_batch(self.current_pool);
 
         let eod_digest = self.inner.acc.digest().clone();
-        let mut eod_package_counts: HashMap<PackageId, Revision> = Default::default();
-        let mut eod_membership_witnesses: HashMap<
-            PackageId,
-            <<A as Accumulator>::Digest as Digest>::Witness,
-        > = Default::default();
-        for package in self.current_pool {
-            let (revision, proof) = self.inner.request_file(Default::default(), &package);
-            eod_package_counts.insert(package, revision);
-            eod_membership_witnesses.insert(package, proof);
-        }
-        let eod_batch_membership_witness: <A::Digest as BatchDigest>::BatchWitness = todo!(); // self.inner.aggegrate(eod_membership_witnesses);
+        let (eod_package_counts, eod_batch_witness) = self.inner.batch_prove(pool_packages);
 
         let epoch: Epoch<A::Digest> = Epoch {
-            packages: self.current_pool,
+            packages: self.current_pool.clone(),
             eod_digest,
             bod_package_counts,
-            bod_package_membership_witness: bod_batch_membership_witness,
+            bod_package_membership_witness: bod_batch_witness,
             eod_package_counts,
-            eod_package_membership_witness: eod_batch_membership_witness,
+            eod_package_membership_witness: eod_batch_witness,
         };
         self.epoch_idxs_by_digest
             .insert(bod_digest, self.past_epochs.len().into());
@@ -385,16 +378,28 @@ where
 
     fn batch_verify(
         &self,
-        packages: HashMap<PackageId, Revision>,
+        mut packages: HashMap<PackageId, Revision>,
         proof: Self::BatchProof,
     ) -> bool {
-        todo!();
+        // Subtract out the packages that appear in "self.pool" so that we can
+        // check "packages" against "self.inner".
+        for pool_package in &self.pool {
+            if let Some(revision) = packages.get_mut(pool_package) {
+                if revision.0 == NonZeroU64::new(0u64).unwrap() {
+                    // The counts in "packages" CANNOT be correct becaus
+                    // "pool_package" appears more times in "self.pool" than in
+                    // "packages".
+                    return false;
+                }
+                revision.decrement().expect(">0");
+            }
+        }
         let members = convert_package_counts(&packages);
         self.inner
             .digest
             .as_ref()
             .unwrap()
-            .verify_batch(&members, proof)
+            .verify_batch(&members, proof) // members[foo] = 0; => check nonmembership of "foo"
     }
 }
 
@@ -749,6 +754,10 @@ where
     }
 
     fn publish(&mut self, package: PackageId) {
+        // If package is new, then we need to precompute a nonmembership proof
+        // for it against self.inner.
+        self.inner
+            .request_file(self.inner.get_metadata().id(), &package);
         self.current_pool.push(package);
     }
 
