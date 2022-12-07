@@ -306,7 +306,8 @@ where
         + BatchDigest
         + Default,
     <A as Accumulator>::Digest: Digest + std::fmt::Debug + Clone + Serialize,
-    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness:
+        std::fmt::Debug + Clone + Serialize + Default,
     <<A as Accumulator>::Digest as Digest>::Witness:
         std::fmt::Debug + Clone + Serialize + DataSized,
     <<A as Accumulator>::Digest as BatchDigest>::BatchWitness:
@@ -324,23 +325,32 @@ where
         let bod_digest = self.inner.acc.digest().clone();
         let (bod_package_counts, bod_batch_witness) = self.inner.batch_prove(pool_packages.clone());
 
-        // TODO: self.inner.increment_batch(self.current_pool);
+        let bod_to_eod: <A::Digest as Digest>::AppendOnlyWitness = match self
+            .inner
+            .acc
+            .increment_batch(self.current_pool.iter().map(hash_package))
+        {
+            Some(proof) => proof,
+            None => self.inner.acc.prove_append_only(&bod_digest),
+        };
 
         let eod_digest = self.inner.acc.digest().clone();
         let (eod_package_counts, eod_batch_witness) = self.inner.batch_prove(pool_packages);
 
+        let packages: Vec<_> = self.current_pool.drain(..).collect();
+
         let epoch: Epoch<A::Digest> = Epoch {
-            packages: self.current_pool.clone(),
+            packages,
             eod_digest,
             bod_package_counts,
             bod_package_membership_witness: bod_batch_witness,
             eod_package_counts,
             eod_package_membership_witness: eod_batch_witness,
+            bod_to_eod,
         };
         self.epoch_idxs_by_digest
             .insert(bod_digest, self.past_epochs.len().into());
         self.past_epochs.push(epoch);
-        self.current_pool = vec![];
     }
 }
 
@@ -404,7 +414,7 @@ where
 }
 
 #[derive(Serialize, Derivative)]
-#[derivative(Clone(bound = "D: Clone, D::BatchWitness: Clone"))]
+#[derivative(Clone(bound = "D: Clone, D::BatchWitness: Clone, D::AppendOnlyWitness: Clone"))]
 struct CatchUpToEODProof<D: BatchDigest>
 where
     D::BatchWitness: Serialize,
@@ -412,7 +422,8 @@ where
     eod_digest: D,
     bod_package_counts: HashMap<PackageId, Revision>,
     bod_package_membership_witness: D::BatchWitness,
-    eod_package_membership_witness: D::BatchWitness, // TODO: missing? bod->eod append only witness
+    eod_package_membership_witness: D::BatchWitness,
+    bod_to_eod: D::AppendOnlyWitness, // TODO: missing? bod->eod append only witness
 }
 
 impl<D: BatchDigest> CatchUpToEODProof<D>
@@ -425,6 +436,7 @@ where
             bod_package_counts: epoch.bod_package_counts,
             bod_package_membership_witness: epoch.bod_package_membership_witness,
             eod_package_membership_witness: epoch.eod_package_membership_witness,
+            bod_to_eod: epoch.bod_to_eod,
         }
     }
 }
@@ -539,7 +551,15 @@ where
         ) {
             return Err(());
         }
-        // TODO: check bod->eod append only
+        if !self
+            .inner
+            .digest
+            .as_ref()
+            .unwrap()
+            .verify_append_only(&catch_up_proof.bod_to_eod, &catch_up_proof.eod_digest)
+        {
+            return Err(());
+        }
         Ok(catch_up_proof.eod_digest.clone())
     }
 }
@@ -626,9 +646,13 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "D: std::fmt::Debug, D::BatchWitness: std::fmt::Debug"))]
-#[derivative(Clone(bound = "D: Clone, D::BatchWitness: Clone"))]
-#[derivative(Default(bound = "D: Default, D::BatchWitness: Default"))]
+#[derivative(Debug(
+    bound = "D: std::fmt::Debug, D::BatchWitness: std::fmt::Debug, D::AppendOnlyWitness: std::fmt::Debug"
+))]
+#[derivative(Clone(bound = "D: Clone, D::BatchWitness: Clone, D::AppendOnlyWitness: Clone"))]
+#[derivative(Default(
+    bound = "D: Default, D::BatchWitness: Default, D::AppendOnlyWitness: Default"
+))]
 struct Epoch<D: BatchDigest> {
     packages: Vec<PackageId>,
     eod_digest: D,
@@ -638,6 +662,7 @@ struct Epoch<D: BatchDigest> {
     eod_package_counts: HashMap<PackageId, Revision>,
     bod_package_membership_witness: D::BatchWitness,
     eod_package_membership_witness: D::BatchWitness,
+    bod_to_eod: D::AppendOnlyWitness,
 }
 
 #[derive(Derivative)]
@@ -674,7 +699,8 @@ where
         + std::fmt::Debug
         + BatchDigest
         + Default,
-    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness: std::fmt::Debug + Clone + Serialize,
+    <<A as Accumulator>::Digest as Digest>::AppendOnlyWitness:
+        std::fmt::Debug + Clone + Serialize + Default,
     <<A as Accumulator>::Digest as Digest>::Witness:
         Clone + Serialize + std::fmt::Debug + DataSized,
     <<A as Accumulator>::Digest as BatchDigest>::BatchWitness:
@@ -693,6 +719,7 @@ where
             eod_package_counts,
             bod_package_membership_witness: eod_package_membership_witness.clone(), // total lie but it typechecks
             eod_package_membership_witness,
+            bod_to_eod: Default::default(), // total lie but it typechecks
         };
         let past_epochs = vec![epoch.clone()];
         let mut epoch_idxs_by_digest = HashMap::default();

@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use crate::accumulator::{Accumulator, Digest};
 
@@ -154,9 +155,7 @@ impl RsaAccumulatorDigest {
     #[must_use]
     fn verify_nonmember(&self, member: &Integer, witness: NonMembershipWitness) -> bool {
         // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
-        // TODO: check size of member
-        // TODO: check size of witness
-        // TODO: clean up clones
+
         let temp1 = self
             .value
             .clone()
@@ -166,13 +165,20 @@ impl RsaAccumulatorDigest {
             .base
             .pow_mod(member, &MODULUS)
             .expect("Non negative value");
-        (temp1 * temp2) % MODULUS.clone() == GENERATOR.clone()
+        let actual = (temp1 * temp2) % MODULUS.deref();
+        GENERATOR.deref() == &actual
     }
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct AppendOnlyWitness {
+    pokes: Vec<poke::Proof>,
+    values: Vec<Integer>,
 }
 
 impl Digest for RsaAccumulatorDigest {
     type Witness = Witness;
-    type AppendOnlyWitness = (Vec<poke::Proof>, Vec<Integer>);
+    type AppendOnlyWitness = AppendOnlyWitness;
 
     #[must_use]
     fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
@@ -196,7 +202,7 @@ impl Digest for RsaAccumulatorDigest {
     #[must_use]
     fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
         let mut cur = self.value.clone();
-        for (inner_proof, value) in Iterator::zip(proof.0.iter(), proof.1.iter()) {
+        for (inner_proof, value) in Iterator::zip(proof.pokes.iter(), proof.values.iter()) {
             let zku = poke::ZKUniverse {
                 modulus: &MODULUS,
                 lambda: 256,
@@ -224,7 +230,7 @@ impl BatchDigest for RsaAccumulatorDigest {
         members: &HashMap<Integer, u32>,
         mut witness: Self::BatchWitness,
     ) -> bool {
-        // TODO: do better
+        // TODO: do better using BBF19?
         for (member, revision) in members {
             let proof = match witness.remove(member) {
                 Some(proof) => proof,
@@ -248,7 +254,7 @@ impl BatchAccumulator for RsaAccumulator {
         HashMap<Integer, u32>,
         <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness,
     ) {
-        // TODO: do better
+        // TODO: do better using BBF19
         let mut counts: HashMap<Integer, u32> = Default::default();
         let mut proofs: HashMap<Integer, <Self::Digest as Digest>::Witness> = Default::default();
         for member in entries {
@@ -258,6 +264,35 @@ impl BatchAccumulator for RsaAccumulator {
             proofs.insert(member, proof);
         }
         (counts, proofs)
+    }
+
+    fn increment_batch<I: IntoIterator<Item = Integer>>(
+        &mut self,
+        members: I,
+    ) -> Option<<<Self as Accumulator>::Digest as Digest>::AppendOnlyWitness> {
+        let old_digest = self.digest.clone();
+
+        // TODO: parallelize but that's tricky
+        let mut exponent = Integer::from(1u8);
+        for member in members {
+            self.increment(member.clone());
+            exponent *= member;
+        }
+
+        let zku = poke::ZKUniverse {
+            modulus: &MODULUS,
+            lambda: 256,
+        };
+        let instance = poke::Instance {
+            w: old_digest.value,
+            u: self.digest.value.clone(),
+        };
+        let witness = poke::Witness { x: exponent };
+        let proof = zku.prove(instance, witness);
+        Some(AppendOnlyWitness {
+            pokes: vec![proof],
+            values: vec![self.digest.value.clone()],
+        })
     }
 }
 
@@ -291,19 +326,20 @@ pub struct RsaAccumulator {
     nonmember_proof_cache: HashMap<Integer, NonMembershipWitness>,
     digest_history: Vec<RsaAccumulatorDigest>,
     increment_history: Vec<Integer>,
-    // append_only_proofs: Vec<Option<AppendOnlyWitness>>,
     append_only_proofs: Vec<SkipListEntry>,
     digests_to_indexes: HashMap<RsaAccumulatorDigest, usize>,
+    exponent: Integer,
 }
 
 static PRECOMPUTE_CHUNK_SIZE: usize = 4;
 
+/// returns (Vec<Witness>, digest, exponent)
 fn precompute_helper(
     values: &[Integer],
     counts: &[u32],
     proof: NonMembershipWitness,
     g: Integer,
-) -> Vec<Witness> {
+) -> (Vec<Witness>, Integer, Integer) {
     debug_assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
         panic!("slice len should not be 0");
@@ -312,38 +348,52 @@ fn precompute_helper(
         debug_assert!(
             RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values[0], proof.clone())
         );
-        return vec![Witness {
-            member: Some(MembershipWitness(g)),
-            nonmember: proof,
-        }];
+        let exponent = values[0].clone() * counts[0];
+        let mut digest = g.clone();
+        digest.pow_mod_mut(&exponent, &MODULUS).unwrap();
+        return (
+            vec![Witness {
+                member: Some(MembershipWitness(g)),
+                nonmember: proof,
+            }],
+            digest,
+            exponent,
+        );
     }
     let split_idx = values.len() / 2;
     let mut values_left = Integer::from(1u8);
     let mut values_right = Integer::from(1u8);
-    let mut values_star = Integer::from(1u8);
+    let mut values_star: Option<Integer> = None;
     let mut members_left = Integer::from(1u8);
     let mut members_right = Integer::from(1u8);
-    let mut members_star = Integer::from(1u8);
+    let mut members_star: Option<Integer> = None;
     let mut g_left = g.clone();
     let mut g_right = g.clone();
-    let mut g_star = g.clone();
+    let mut g_star: Option<Integer> = None;
     for idx in 0..values.len() {
         let value = values[idx].clone();
         let count = counts[idx];
         let member = value.clone().pow(count);
-        values_star *= value.clone();
-        g_star.pow_mod_mut(&member, &MODULUS).expect(">= 0");
-        members_star *= member.clone();
         if idx < split_idx {
             values_left *= value;
             g_left.pow_mod_mut(&member, &MODULUS).expect(">= 0");
             members_left *= member;
         } else {
-            values_right *= value;
             g_right.pow_mod_mut(&member, &MODULUS).expect(">= 0");
-            members_right *= member;
+            values_right *= value.clone();
+            members_right *= member.clone();
+
+            g_star
+                .get_or_insert_with(|| g_left.clone())
+                .pow_mod_mut(&member, &MODULUS)
+                .expect(">= 0");
+            *values_star.get_or_insert_with(|| values_left.clone()) *= value;
+            *members_star.get_or_insert_with(|| members_left.clone()) *= member;
         }
     }
+    let g_star = g_star.unwrap();
+    let members_star = members_star.unwrap();
+    let values_star = values_star.unwrap();
     debug_assert!(RsaAccumulatorDigest::from(g_star.clone()).verify_member(
         &members_star,
         1,
@@ -432,6 +482,7 @@ fn precompute_helper(
                     proof_left,
                     g_right,
                 )
+                .0
             },
             || {
                 precompute_helper(
@@ -440,6 +491,7 @@ fn precompute_helper(
                     proof_right,
                     g_left,
                 )
+                .0
             },
         )
     } else {
@@ -449,20 +501,23 @@ fn precompute_helper(
                 &counts[..split_idx],
                 proof_left,
                 g_right,
-            ),
+            )
+            .0,
             precompute_helper(
                 &values[split_idx..],
                 &counts[split_idx..],
                 proof_right,
                 g_left,
-            ),
+            )
+            .0,
         )
     };
     ret.extend_from_slice(&r_ret);
-    ret
+    (ret, g_star, members_star)
 }
 
-fn precompute(values: &[Integer], counts: &[u32]) -> Vec<Witness> {
+/// Returns (Vec<Witness>, digest, exponent)
+fn precompute(values: &[Integer], counts: &[u32]) -> (Vec<Witness>, Integer, Integer) {
     let mut e_star = Integer::from(1u8);
     for (value, count) in std::iter::zip(values.iter(), counts) {
         e_star *= value.clone().pow(count);
@@ -479,7 +534,6 @@ fn precompute(values: &[Integer], counts: &[u32]) -> Vec<Witness> {
 }
 
 impl RsaAccumulator {
-    //TODO compute all proofs?
     #[must_use]
     fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
         debug_assert!(member >= &0);
@@ -503,20 +557,13 @@ impl RsaAccumulator {
             return None; // value is a member!
         }
 
-        let mut exp = Integer::from(1u8);
-        //TODO not this
-        for (s, count) in self.multiset.iter() {
-            exp *= Integer::from(s.pow(count));
-        }
-
         // Bezout coefficients:
-        // gcd = exp * s + value * t = 1
-        let (gcd, s, t) = Integer::gcd_cofactors(exp, value.into(), Integer::new());
-
+        // gcd: exp * s + value * t = 1
+        let (gcd, s, t) = Integer::gcd_cofactors_ref(&self.exponent, value).into();
         if gcd != 1u8 {
             unreachable!("value should be coprime with the exponent of the accumulator");
         }
-        // TODO: fix the size of exp (t)
+        debug_assert!(&s < value); // s should be small-ish
 
         let d = GENERATOR.clone().pow_mod(&t, &MODULUS).unwrap();
 
@@ -559,8 +606,6 @@ impl Accumulator for RsaAccumulator {
     fn digest(&self) -> &RsaAccumulatorDigest {
         &self.digest
     }
-
-    /// TODO: implement better `increment_batch`
 
     /// O(N)
     fn increment(&mut self, member: Integer) {
@@ -665,7 +710,10 @@ impl Accumulator for RsaAccumulator {
             value_list.push(self.digest_history[cur_idx].value.clone())
         }
 
-        (proof_list, value_list)
+        AppendOnlyWitness {
+            pokes: proof_list,
+            values: value_list,
+        }
     }
 
     fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
@@ -686,16 +734,11 @@ impl Accumulator for RsaAccumulator {
         // Precompute membership proofs:
         let mut values = Vec::<Integer>::with_capacity(multiset.len());
         let mut counts = Vec::<u32>::with_capacity(multiset.len());
-        let mut digest = GENERATOR.clone(); // TODO: repeat less work
         for (value, count) in multiset.iter() {
-            // let exp = Integer::from(value.pow(count));
-            for _ in 0..*count {
-                digest.pow_mod_mut(value, &MODULUS).unwrap();
-            }
             values.push(value.clone());
             counts.push(*count);
         }
-        let mut proofs = precompute(&values, &counts);
+        let (mut proofs, digest, exponent) = precompute(&values, &counts);
 
         let mut proof_cache: HashMap<Integer, Witness> = Default::default();
         for _ in 0..values.len() {
@@ -716,6 +759,7 @@ impl Accumulator for RsaAccumulator {
             append_only_proofs: vec![],
             increment_history: vec![],
             digests_to_indexes,
+            exponent,
         }
     }
 }

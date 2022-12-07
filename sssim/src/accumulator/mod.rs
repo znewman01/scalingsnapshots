@@ -58,8 +58,12 @@ pub trait BatchAccumulator: Accumulator
 where
     <Self as Accumulator>::Digest: BatchDigest,
 {
-    fn increment_batch(&mut self, members: Vec<Integer>) {
+    fn increment_batch<I: IntoIterator<Item = Integer>>(
+        &mut self,
+        members: I,
+    ) -> Option<<<Self as Accumulator>::Digest as Digest>::AppendOnlyWitness> {
         members.into_iter().for_each(|m| self.increment(m));
+        None
     }
 
     fn prove_batch<I: IntoIterator<Item = Integer>>(
