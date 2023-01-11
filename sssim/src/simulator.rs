@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::authenticator::ClientSnapshot;
 use crate::log::{Action, Package, PackageId, UserId};
 use crate::util::DataSized;
 use crate::Authenticator;
@@ -43,19 +42,17 @@ pub struct ResourceUsage {
 /// TODO: user state?
 /// TODO: manage TUF repo?
 #[derive(Debug)]
-pub struct Simulator<S: ClientSnapshot, A: Authenticator<S>> {
+pub struct Simulator<A: Authenticator> {
     authenticator: A,
-    snapshots: HashMap<UserId, S>,
+    snapshots: HashMap<UserId, A::ClientSnapshot>,
     /// Keep track of the length of the latest version of each package, if provided.
     package_lengths: HashMap<PackageId, u64>,
 }
 
 // TODO: investigate the clones, see if you can get rid of them
-impl<S: ClientSnapshot, A: Authenticator<S>> Simulator<S, A>
+impl<A: Authenticator> Simulator<A>
 where
-    S: Default,
-    S::Diff: Serialize,
-    Option<S::Diff>: DataSized,
+    A::ClientSnapshot: Default,
 {
     pub fn new(authenticator: A) -> Self {
         Self {
@@ -74,11 +71,16 @@ where
         let user_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
         let (server_request_time, (revision, proof)) = Duration::time_fn(|| {
             self.authenticator
-                .request_file(user_snapshot.id(), &package.id)
+                .request_file(A::id(&user_snapshot), &package.id)
         });
         let bandwidth = proof.size();
         let (user_verify_time, _) = Duration::time_fn(|| {
-            assert!(user_snapshot.verify_membership(&package.id, revision, proof));
+            assert!(A::verify_membership(
+                &user_snapshot,
+                &package.id,
+                revision,
+                proof
+            ));
         });
 
         ResourceUsage {
@@ -91,23 +93,26 @@ where
 
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
-        let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let mut snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
 
         // Answer the update metadata server-side.
         let (server_compute, maybe_snapshot_diff) =
-            Duration::time_fn(|| self.authenticator.refresh_metadata(snapshot.id()));
+            Duration::time_fn(|| self.authenticator.refresh_metadata(A::id(&snapshot)));
 
         // TODO: make this a 2 part dance
 
-        let snapshot_size = maybe_snapshot_diff.size();
+        let snapshot_size = maybe_snapshot_diff
+            .as_ref()
+            .map(DataSized::size)
+            .unwrap_or_default();
 
         let user_compute = if let Some(snapshot_diff) = maybe_snapshot_diff {
             // Check the new snapshot for rollbacks and store it.
             let (user_compute_verify, _) = Duration::time_fn(|| {
-                assert!(snapshot.check_no_rollback(&snapshot_diff));
+                assert!(A::check_no_rollback(&snapshot, &snapshot_diff));
             });
             let (user_compute_update, _) = Duration::time_fn(|| {
-                snapshot.update(snapshot_diff);
+                A::update(&mut snapshot, snapshot_diff);
             });
             user_compute_verify + user_compute_update
         } else {

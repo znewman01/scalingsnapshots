@@ -6,7 +6,7 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 use serde::Serialize;
 
 use crate::{
-    authenticator::{self, ClientSnapshot, Hash, Revision},
+    authenticator::{Hash, Revision},
     log::PackageId,
     util::DataSizeFromSerialize,
 };
@@ -18,6 +18,7 @@ pub struct Metadata {
     hash: Hash,
 }
 
+/// The mercury-hash client snapshot contains *all* the snapshot state.
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
@@ -26,51 +27,6 @@ pub struct Snapshot {
 }
 
 impl DataSizeFromSerialize for Snapshot {}
-
-/// The mercury-hash client snapshot contains *all* the snapshot state.
-impl ClientSnapshot for Snapshot {
-    type Id = u64;
-    type Diff = Snapshot;
-    type Proof = ();
-
-    fn id(&self) -> Self::Id {
-        self.id
-    }
-
-    fn update(&mut self, diff: Self::Diff) {
-        self.packages = diff.packages;
-        self.id = diff.id;
-    }
-
-    fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in &self.packages {
-            let new_metadata = match diff.packages.get(package_id) {
-                None => {
-                    return false;
-                }
-                Some(m) => m,
-            };
-            if new_metadata.revision < metadata.revision {
-                return false;
-            }
-        }
-        true
-    }
-
-    // Could validate the hash here
-    fn verify_membership(
-        &self,
-        package_id: &PackageId,
-        revision: Revision,
-        _: Self::Proof,
-    ) -> bool {
-        if let Some(metadata) = self.packages.get(package_id) {
-            metadata.revision == revision
-        } else {
-            false
-        }
-    }
-}
 
 /// An authenticator as-in mercury-hash.
 #[cfg_attr(test, derive(Arbitrary))]
@@ -82,7 +38,11 @@ pub struct Authenticator {
 impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl super::Authenticator for Authenticator {
+    type ClientSnapshot = Snapshot;
+    type Id = u64;
+    type Diff = Snapshot;
+    type Proof = ();
     fn name() -> &'static str {
         "mercury_hash"
     }
@@ -96,11 +56,8 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Self { snapshot }
     }
 
-    fn refresh_metadata(
-        &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        if snapshot_id == self.snapshot.id() {
+    fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
+        if snapshot_id == Self::id(&self.snapshot) {
             // already up to date
             return None;
         }
@@ -118,9 +75,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn request_file(
         &mut self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        snapshot_id: Self::Id,
         package: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+    ) -> (Revision, Self::Proof) {
         let metadata = self
             .snapshot
             .packages
@@ -131,6 +88,44 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn get_metadata(&self) -> Snapshot {
         self.snapshot.clone()
+    }
+
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
+        snapshot.id
+    }
+
+    fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
+        snapshot.packages = diff.packages;
+        snapshot.id = diff.id;
+    }
+
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
+        for (package_id, metadata) in &snapshot.packages {
+            let new_metadata = match diff.packages.get(package_id) {
+                None => {
+                    return false;
+                }
+                Some(m) => m,
+            };
+            if new_metadata.revision < metadata.revision {
+                return false;
+            }
+        }
+        true
+    }
+
+    // Could validate the hash here
+    fn verify_membership(
+        snapshot: &Self::ClientSnapshot,
+        package_id: &PackageId,
+        revision: Revision,
+        _: Self::Proof,
+    ) -> bool {
+        if let Some(metadata) = snapshot.packages.get(package_id) {
+            metadata.revision == revision
+        } else {
+            false
+        }
     }
 }
 

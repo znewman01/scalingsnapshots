@@ -2,20 +2,8 @@ use digest::{ExtendableOutput, Update, XofReader};
 use rug;
 use sha3::{Sha3XofReader, Shake256};
 
-// How sure do we want to be that our primes are actually prime?
-// We want to be 30 sure.
-const MILLER_RABIN_ITERS: u32 = 30;
-
-#[derive(Debug)]
-pub struct MyError;
-
-impl std::fmt::Display for MyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("MyError")
-    }
-}
-
-impl std::error::Error for MyError {}
+use crate::primitives::Prime;
+use thiserror::Error;
 
 pub struct IntegerHasher {
     reader: Sha3XofReader,
@@ -42,8 +30,14 @@ impl IntegerHasher {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum HashToPrimeError {
+    #[error("too many iters")]
+    TooManyIters,
+}
+
 /// Hash the value of data to a 256-bit prime number.
-pub fn hash_to_prime(data: &[u8]) -> Result<rug::Integer, MyError> {
+pub fn hash_to_prime(data: &[u8]) -> Result<Prime, HashToPrimeError> {
     // We want a random number with a number of bits just greater than modulus
     // has. significant_digits gives us the right number of bytes.
     let digits: usize = 32;
@@ -52,14 +46,11 @@ pub fn hash_to_prime(data: &[u8]) -> Result<rug::Integer, MyError> {
     // TODO: calculate how many times we should actually do this.
     // It appears to be between 10,000 and 100,000.
     for _ in 0..10000 {
-        let candidate = bar.hash();
-        if candidate.is_probably_prime(MILLER_RABIN_ITERS) == rug::integer::IsPrime::No {
-            continue;
+        if let Ok(prime) = Prime::try_from(bar.hash()) {
+            return Ok(prime);
         }
-        // If we made it here, our candidate rocks.
-        return Ok(candidate);
     }
-    Err(MyError)
+    Err(HashToPrimeError::TooManyIters)
 }
 
 #[cfg(test)]
@@ -70,8 +61,14 @@ mod tests {
     proptest! {
         #[test]
         fn test_hash_to_prime(data: Vec<u8>) {
-            let result = hash_to_prime(&data)?;
+            let result: Prime = hash_to_prime(&data)?;
             prop_assert!(result.significant_bits() <= 256);
+        }
+
+        #[test]
+        fn test_hash_to_prime_unique(data1: Vec<u8>, data2: Vec<u8>) {
+            prop_assume!(data1 != data2);
+            prop_assert_ne!(hash_to_prime(&data1), hash_to_prime(&data2));
         }
     }
 }

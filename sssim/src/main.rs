@@ -11,11 +11,11 @@ use rusqlite::Connection;
 use serde::Serialize;
 use uom::si::information::byte;
 
-use sssim::authenticator::{BatchClientSnapshot, ClientSnapshot};
+use sssim::authenticator::Authenticator;
 use sssim::log::{Entry, PackageId};
 use sssim::simulator::ResourceUsage;
 use sssim::util::{DataSized, Information};
-use sssim::{authenticator, Authenticator, PoolAuthenticator};
+use sssim::{authenticator, PoolAuthenticator};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -42,51 +42,6 @@ struct Event {
     entry: Entry,
     result: ResourceUsage,
 }
-
-// Read packages from file
-/*
-   for line in init.lines() {
-       count += 1;
-       if last_update.elapsed() > Duration::from_secs(1) {
-           last_update = Instant::now();
-           match &bar {
-               Some(bar) => {
-                   bar.set_position(count);
-               }
-               None => {
-                   eprintln!("Packages: {}", count);
-               }
-           };
-       }
-       let result = serde_json::from_str(&line.expect("reading from file failed"));
-       let entry: Entry = result.expect("bad log entry");
-       match entry.action {
-           Action::Publish { package } => {
-               to_import.push(package.id);
-           }
-           _ => panic!("Initialization should only include publish"),
-       }
-   }
-    let result = serde_json::from_str(&line.expect("reading from file failed"));
-    let mut entry: Entry = result.expect("bad log entry");
-    if let Action::Download { user, .. } = entry.action.clone() {
-        let refresh_metadata = Action::RefreshMetadata { user };
-        let mut inner_entry: Entry = Entry::new(entry.timestamp, refresh_metadata);
-        let refresh_usage = simulator.process(&mut inner_entry.action);
-        let event = Event {
-            entry: inner_entry,
-            result: refresh_usage,
-        };
-        if let Some(result) = write_sqlite(event, out) {
-            result?;
-        }
-    }
-    let usage = simulator.process(&mut entry.action);
-    let event = Event {
-        entry,
-        result: usage,
-    };
-*/
 
 fn create_tables(db: &Connection) -> rusqlite::Result<()> {
     db.execute(
@@ -207,7 +162,7 @@ fn insert_update_result(
             merge_time,
             cores,
             dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ",
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -258,7 +213,7 @@ fn insert_refresh_result(
     )
 }
 
-fn batch_update_trials<A, S>(
+fn batch_update_trials<A>(
     num_trials: u16,
     auth: &A,
     batch_size: u16,
@@ -267,9 +222,7 @@ fn batch_update_trials<A, S>(
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
-    S: BatchClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as BatchClientSnapshot>::BatchProof: Serialize,
-    A: PoolAuthenticator<S> + Clone + Debug + DataSized + Authenticator<S>,
+    A: PoolAuthenticator + Clone + Debug + DataSized,
 {
     for i in 0..num_trials {
         let cores = 1;
@@ -304,7 +257,7 @@ where
     Ok(())
 }
 
-fn update_trials<A, S>(
+fn update_trials<A>(
     num_trials: u16,
     auth: &A,
     dataset: &Option<String>,
@@ -312,9 +265,7 @@ fn update_trials<A, S>(
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
+    A: Authenticator + Clone + Debug,
 {
     for _ in 0..num_trials {
         // TODO: batches: 0/batch_size
@@ -344,7 +295,7 @@ where
     Ok(())
 }
 
-fn precompute_trials<A, S>(
+fn precompute_trials<A>(
     num_trials: u16,
     dataset: &Option<String>,
     num_packages: usize,
@@ -352,9 +303,7 @@ fn precompute_trials<A, S>(
     packages: &Vec<PackageId>,
 ) -> rusqlite::Result<A>
 where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
+    A: Authenticator + Debug,
 {
     let mut auth = None;
     for _ in 0..num_trials {
@@ -380,19 +329,14 @@ where
     Ok(auth.unwrap())
 }
 
-fn create_user_state<A, S>(
+fn create_user_state<A: Authenticator>(
     num_trials: u16,
     auth: &A,
     dataset: &Option<String>,
     num_packages: usize,
     db: &Connection,
-) -> rusqlite::Result<S>
-where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
-{
-    let mut user_state_initial: Option<S> = None;
+) -> rusqlite::Result<A::ClientSnapshot> {
+    let mut user_state_initial: Option<A::ClientSnapshot> = None;
     for _ in 0..num_trials {
         let user_state = auth.get_metadata();
         insert_refresh_result(
@@ -407,23 +351,18 @@ where
         )?;
         user_state_initial.replace(user_state);
     }
-    let user_state_initial: S = user_state_initial.take().unwrap();
+    let user_state_initial = user_state_initial.take().unwrap();
     Ok(user_state_initial)
 }
 
-fn refresh_user_state<A, S>(
+fn refresh_user_state<A: Authenticator + Clone>(
     refresh_trials: u16,
     auth_ref: &A,
     dataset: &Option<String>,
     num_packages: usize,
     db: &Connection,
-    user_state_initial: S,
-) -> rusqlite::Result<()>
-where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
-{
+    user_state_initial: A::ClientSnapshot,
+) -> rusqlite::Result<()> {
     let mut elapsed_releases = VecDeque::from(vec![0, 1, 10]); // assume sorted
     let max_entry = elapsed_releases[elapsed_releases.len() - 1];
     for idx in 0..=max_entry {
@@ -431,13 +370,13 @@ where
         if idx == elapsed_releases[0] {
             for _ in 0..refresh_trials {
                 let mut user_state = user_state_initial.clone();
-                let maybe_diff = auth.refresh_metadata(user_state.id());
+                let maybe_diff = auth.refresh_metadata(A::id(&user_state));
                 let (bandwidth, user_time) = match maybe_diff {
                     Some(diff) => {
                         let bandwidth = diff.size();
                         let (user_time, _) = Duration::time_fn(|| {
-                            user_state.check_no_rollback(&diff);
-                            user_state.update(diff);
+                            A::check_no_rollback(&user_state, &diff);
+                            A::update(&mut user_state, diff);
                         });
                         (bandwidth, user_time)
                     }
@@ -469,7 +408,7 @@ where
     Ok(())
 }
 
-fn download_trials<A, S>(
+fn download_trials<A>(
     download_trials: u16,
     auth: A,
     dataset: &Option<String>,
@@ -478,9 +417,7 @@ fn download_trials<A, S>(
     packages: Vec<PackageId>,
 ) -> rusqlite::Result<()>
 where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
+    A: Authenticator + Clone + Debug,
 {
     let mut rng = rand::thread_rng();
     for _ in 1..download_trials {
@@ -488,11 +425,11 @@ where
         let user_state = auth.get_metadata();
         let package = rand::seq::SliceRandom::choose(packages.as_slice(), &mut rng).unwrap();
 
-        let (revision, proof) = auth.request_file(user_state.id(), &package);
+        let (revision, proof) = auth.request_file(A::id(&user_state), &package);
         let bandwidth = proof.size();
 
         let (user_time, _) =
-            Duration::time_fn(|| user_state.verify_membership(&package, revision, proof));
+            Duration::time_fn(|| A::verify_membership(&user_state, &package, revision, proof));
 
         insert_download_result(db, A::name(), num_packages, user_time, bandwidth, dataset)?;
     }
@@ -523,15 +460,13 @@ fn insert_download_result(
     )
 }
 
-fn run<S, A>(
+fn run<A>(
     dataset: &Option<String>,
     packages: Vec<PackageId>,
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
-    S: ClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: Authenticator<S> + Clone + Debug,
+    A: Authenticator + Clone + Debug,
 {
     static PRECOMPUTE_TRIALS: u16 = 3;
     static UPDATE_TRIALS: u16 = 3;
@@ -560,16 +495,13 @@ where
     Ok(())
 }
 
-fn run_batch<S, A>(
+fn run_batch<A>(
     dataset: &Option<String>,
     packages: Vec<PackageId>,
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
-    S: BatchClientSnapshot + Clone + Default + Debug + DataSized,
-    <S as BatchClientSnapshot>::BatchProof: Serialize,
-    <S as ClientSnapshot>::Diff: Serialize,
-    A: PoolAuthenticator<S> + Clone + Debug,
+    A: PoolAuthenticator + Clone + Debug,
 {
     static PRECOMPUTE_TRIALS: u16 = 3;
     static UPDATE_TRIALS: u16 = 3;
@@ -637,15 +569,15 @@ fn main() -> io::Result<()> {
         let packages = packages.clone();
         let dataset = &args.dataset;
         match authenticator.as_str() {
-            "insecure" => run::<_, authenticator::Insecure>(dataset, packages, &db),
-            "hackage" => run::<_, authenticator::Hackage>(dataset, packages, &db),
-            "mercury_diff" => run::<_, authenticator::MercuryDiff>(dataset, packages, &db),
-            "mercury_hash" => run::<_, authenticator::MercuryHash>(dataset, packages, &db),
-            "mercury_hash_diff" => run::<_, authenticator::MercuryHashDiff>(dataset, packages, &db),
-            "merkle" => run::<_, authenticator::Merkle>(dataset, packages, &db),
-            "rsa" => run::<_, authenticator::Rsa>(dataset, packages, &db),
-            "rsa_pool" => run_batch::<_, authenticator::RsaPool>(dataset, packages, &db),
-            "vanilla_tuf" => run::<_, authenticator::VanillaTuf>(dataset, packages, &db),
+            "insecure" => run::<authenticator::Insecure>(dataset, packages, &db),
+            "hackage" => run::<authenticator::Hackage>(dataset, packages, &db),
+            "mercury_diff" => run::<authenticator::MercuryDiff>(dataset, packages, &db),
+            "mercury_hash" => run::<authenticator::MercuryHash>(dataset, packages, &db),
+            "mercury_hash_diff" => run::<authenticator::MercuryHashDiff>(dataset, packages, &db),
+            "merkle" => run::<authenticator::Merkle>(dataset, packages, &db),
+            "rsa" => run::<authenticator::Rsa>(dataset, packages, &db),
+            "rsa_pool" => run_batch::<authenticator::RsaPool>(dataset, packages, &db),
+            "vanilla_tuf" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
             _ => panic!("not valid"),
         }
         .unwrap();

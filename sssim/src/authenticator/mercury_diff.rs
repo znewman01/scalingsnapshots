@@ -5,11 +5,7 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use serde::Serialize;
 
-use crate::{
-    authenticator::{self, ClientSnapshot, Revision},
-    log::PackageId,
-    util::DataSizeFromSerialize,
-};
+use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Debug, Clone, Copy, Serialize)]
@@ -23,6 +19,7 @@ impl From<Revision> for Metadata {
     }
 }
 
+/// The mercury TUF client snapshot contains *all* the snapshot state.
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
@@ -31,53 +28,6 @@ pub struct Snapshot {
 }
 
 impl DataSizeFromSerialize for Snapshot {}
-
-/// The mercury TUF client snapshot contains *all* the snapshot state.
-impl ClientSnapshot for Snapshot {
-    type Id = u64;
-    type Diff = Snapshot;
-    type Proof = ();
-
-    fn id(&self) -> Self::Id {
-        self.id
-    }
-
-    // only update changed packages
-    fn update(&mut self, diff: Self::Diff) {
-        for (package_id, metadata) in &diff.packages {
-            if let Some(mut old_metadata) = self.packages.get_mut(package_id) {
-                old_metadata.revision.0 = metadata.revision.0;
-            } else {
-                self.packages.insert(package_id.clone(), *metadata);
-            }
-        }
-        self.id = diff.id;
-    }
-
-    fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        for (package_id, metadata) in &diff.packages {
-            if let Some(old_metadata) = self.packages.get(&package_id) {
-                if metadata.revision < old_metadata.revision {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    fn verify_membership(
-        &self,
-        package_id: &PackageId,
-        revision: Revision,
-        _: Self::Proof,
-    ) -> bool {
-        if let Some(metadata) = self.packages.get(package_id) {
-            metadata.revision == revision
-        } else {
-            false
-        }
-    }
-}
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -89,7 +39,12 @@ pub struct Authenticator {
 impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl super::Authenticator for Authenticator {
+    type ClientSnapshot = Snapshot;
+    type Id = u64;
+    type Diff = Snapshot;
+    type Proof = ();
+
     fn name() -> &'static str {
         "mercury_diff"
     }
@@ -110,17 +65,14 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     }
 
     // find the packages that have changed
-    fn refresh_metadata(
-        &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        if snapshot_id == self.snapshot.id() {
+    fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
+        if snapshot_id == Self::id(&self.snapshot) {
             // already up to date
             return None;
         }
         let prev_snapshot = &self.snapshots[&snapshot_id];
         let mut diff = Snapshot {
-            id: self.snapshot.id(),
+            id: Self::id(&self.snapshot),
             packages: HashMap::new(),
         };
         for (package_id, metadata) in &self.snapshot.packages {
@@ -153,9 +105,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn request_file(
         &mut self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        snapshot_id: Self::Id,
         package: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+    ) -> (Revision, Self::Proof) {
         let metadata = self
             .snapshot
             .packages
@@ -166,6 +118,45 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn get_metadata(&self) -> Snapshot {
         self.snapshot.clone()
+    }
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
+        snapshot.id
+    }
+
+    // only update changed packages
+    fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
+        for (package_id, metadata) in &diff.packages {
+            if let Some(mut old_metadata) = snapshot.packages.get_mut(package_id) {
+                old_metadata.revision.0 = metadata.revision.0;
+            } else {
+                snapshot.packages.insert(package_id.clone(), *metadata);
+            }
+        }
+        snapshot.id = diff.id;
+    }
+
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
+        for (package_id, metadata) in &diff.packages {
+            if let Some(old_metadata) = snapshot.packages.get(&package_id) {
+                if metadata.revision < old_metadata.revision {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn verify_membership(
+        snapshot: &Self::ClientSnapshot,
+        package_id: &PackageId,
+        revision: Revision,
+        _: Self::Proof,
+    ) -> bool {
+        if let Some(metadata) = snapshot.packages.get(package_id) {
+            metadata.revision == revision
+        } else {
+            false
+        }
     }
 }
 

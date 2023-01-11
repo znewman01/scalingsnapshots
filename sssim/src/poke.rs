@@ -2,16 +2,20 @@
 //!
 //! See [BBF18]: https://eprint.iacr.org/2018/1188.pdf
 #![allow(non_snake_case)]
+use std::borrow::Borrow;
+use std::marker::PhantomData;
+
 use crate::hash_to_prime::{hash_to_prime, IntegerHasher};
+use crate::primitives::{Group, Prime};
 use rug::Integer;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Instance {
+pub struct Instance<G> {
     // new value
-    pub w: Integer,
+    pub w: G,
     // base
-    pub u: Integer,
+    pub u: G,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,94 +24,82 @@ pub struct Witness {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Proof {
-    z: Integer,
-    Q: Integer,
+pub struct Proof<G> {
+    z: G,
+    Q: G,
     r: Integer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZKUniverse<'a> {
-    pub modulus: &'a Integer,
+pub struct ZKUniverse<G> {
     pub lambda: u64,
+    _group: PhantomData<G>,
 }
 
-impl<'a> ZKUniverse<'a> {
-    fn exp(&self, base: Integer, exp: &Integer) -> Integer {
-        return base
-            .pow_mod(exp, self.modulus)
-            .expect("Non-negative exponent");
+impl<G> Default for ZKUniverse<G> {
+    fn default() -> Self {
+        Self {
+            lambda: 256,
+            _group: Default::default(),
+        }
     }
+}
 
-    fn fiat_shamir1(&self, instance: &Instance) -> Integer {
+impl<G: Group + TryFrom<Integer> + 'static> ZKUniverse<G> {
+    fn fiat_shamir1(&self, instance: &Instance<G>) -> G {
         let data_str = format!("{instance:?}");
-        let bytes = self.modulus.significant_digits::<u8>();
+        let bytes = G::bytes();
         let mut hasher = IntegerHasher::new(data_str.as_bytes(), bytes);
         loop {
             // TODO: replace with fancier rejection sampling
-            let value = hasher.hash();
-            if &value < self.modulus {
+            if let Ok(value) = G::try_from(hasher.hash()) {
                 return value;
             }
         }
     }
 
-    fn fiat_shamir2(&self, instance: &Instance, g: &Integer, z: &Integer) -> Integer {
+    fn fiat_shamir2(&self, instance: &Instance<G>, g: &G, z: &G) -> Prime {
         let data_str = format!("{instance:?}{g:?}{z:?}");
         hash_to_prime(data_str.as_bytes()).unwrap()
     }
 
-    fn fiat_shamir3(
-        &self,
-        instance: &Instance,
-        g: &Integer,
-        z: &Integer,
-        ell: &Integer,
-    ) -> Integer {
+    fn fiat_shamir3(&self, instance: &Instance<G>, g: &G, z: &G, ell: &Prime) -> Integer {
         let data_str = format!("{instance:?}{g:?}{z:?}{ell:?}");
         let mut hasher = IntegerHasher::new(data_str.as_bytes(), 32);
         hasher.hash()
     }
 
-    pub fn prove(&self, instance: Instance, witness: Witness) -> Proof {
+    pub fn prove(&self, instance: Instance<G>, witness: Witness) -> Proof<G> {
         let u = instance.u.clone();
         let w = instance.w.clone();
         let x = witness.x;
-        assert!(u != 0u64);
-        assert_eq!(self.exp(u.clone(), &x), w);
+        assert_eq!(u.clone() * &x, w);
 
         // Verifier sends g <-$- G to the Prover
-        let g: Integer = self.fiat_shamir1(&instance);
+        let g = self.fiat_shamir1(&instance);
 
         // Prover sends z <- g^x \in G to the verifier.
-        let z = self.exp(g.clone(), &x);
+        let z = g.clone() * &x;
 
         // Verifier sends ell <-$- Primes(lambda) and alpha <-$- [0, 2^lambda).
         let ell = self.fiat_shamir2(&instance, &g, &z);
         let alpha = self.fiat_shamir3(&instance, &g, &z, &ell);
 
         // Prover finds the quotient q and residue r < ell such that x = ql + r.
-        let (q, r) = x.div_rem(ell);
+        let (q, r) = Integer::from(x).div_rem(ell.into_inner());
 
         // Prover sends Q = u^q g^(alpha q) and r to the Verifier
-        let mut Q = self.exp(u, &q) * self.exp(g, &(alpha * q));
-        Q %= self.modulus;
+        let Q = u * &q + g * &(alpha * q);
 
         Proof { z, Q, r }
     }
 
-    pub fn verify(&self, instance: Instance, proof: Proof) -> bool {
+    pub fn verify(&self, instance: Instance<G>, proof: Proof<G>) -> bool {
         let u = instance.u.clone();
         let w = instance.w.clone();
         let Q = proof.Q;
         let r = proof.r;
         let z = proof.z;
-
-        for value in vec![&u, &w, &Q, &r, &z] {
-            if value == &1u64 || value == &(self.modulus.clone() - 1u64) {
-                return false;
-            }
-        }
 
         // From Fiat-Shamir
         let g = self.fiat_shamir1(&instance);
@@ -115,12 +107,9 @@ impl<'a> ZKUniverse<'a> {
         let alpha = self.fiat_shamir3(&instance, &g, &z, &ell);
 
         // Verifier accepts if r < ell and Q^ell u^r g^(alpha r) = w z^(alpha).
-        let mut lhs = self.exp(Q, &ell) * self.exp(u, &r);
-        lhs *= self.exp(g, &(alpha.clone() * r.clone()));
-        let mut rhs = w * self.exp(z, &alpha);
-        lhs = lhs % self.modulus;
-        rhs = rhs % self.modulus;
-        r < ell && lhs == rhs
+        let lhs = Q * ell.borrow() + u * &r + g * &(alpha.clone() * r.clone());
+        let rhs = w + z * &alpha;
+        &r < ell.inner() && lhs == rhs
     }
 }
 
@@ -153,10 +142,10 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Eq)]
-    struct PokeProblem<'a> {
-        instance: Instance,
+    struct PokeProblem<G> {
+        instance: Instance<G>,
         witness: Witness,
-        universe: ZKUniverse<'a>,
+        universe: ZKUniverse<G>,
     }
 
     use proptest_derive::Arbitrary;
@@ -167,24 +156,12 @@ mod tests {
         Universe,
     }
 
-    impl<'a> Arbitrary for PokeProblem<'a> {
+    impl<G> Arbitrary for PokeProblem<G> {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
-            (primes(), primes())
-                .prop_filter_map("rsa modulus (not prime power!)", |(p, q)| {
-                    if p == q {
-                        return None;
-                    }
-                    let modulus = p * q;
-                    let modulus: &'static _ = Box::leak(Box::new(modulus));
-                    let lambda = 256;
-                    Some(ZKUniverse {
-                        modulus: &modulus,
-                        lambda,
-                    })
-                })
+            Just(Some(ZKUniverse::default()))
                 .prop_flat_map(|universe| {
                     (int_mod(universe.modulus.clone()), integers()).prop_filter_map(
                         "domain",

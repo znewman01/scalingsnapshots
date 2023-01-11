@@ -1,16 +1,11 @@
 use std::collections::HashMap;
 
-use authenticator::ClientSnapshot;
 use serde::Serialize;
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::{
-    authenticator::{self, Revision},
-    log::PackageId,
-    util::DataSizeFromSerialize,
-};
+use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -23,43 +18,6 @@ pub struct Snapshot {
 impl DataSizeFromSerialize for Snapshot {}
 
 impl DataSizeFromSerialize for Vec<(PackageId, Revision)> {}
-
-impl ClientSnapshot for Snapshot {
-    type Id = usize;
-    type Diff = Vec<(PackageId, Revision)>;
-    type Proof = ();
-
-    fn id(&self) -> Self::Id {
-        self.high_water_mark
-    }
-
-    fn update(&mut self, diff: Self::Diff) {
-        self.high_water_mark += diff.len();
-        for (package_id, new_revision) in diff.into_iter() {
-            self.package_revisions.insert(package_id, new_revision);
-        }
-    }
-
-    fn check_no_rollback(&self, diff: &Self::Diff) -> bool {
-        // TODO: combine with update
-        for (package_id, new_revision) in diff.iter() {
-            let result = self.package_revisions.get(package_id);
-            if matches!(result, Some(old_revision) if old_revision > new_revision) {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn verify_membership(
-        &self,
-        package_id: &PackageId,
-        revision: Revision,
-        _: Self::Proof,
-    ) -> bool {
-        matches!(self.package_revisions.get(package_id), Some(r) if r == &revision)
-    }
-}
 
 /// A Hackage-style authenticator.
 ///
@@ -74,7 +32,12 @@ pub struct Authenticator {
 impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl super::Authenticator for Authenticator {
+    type ClientSnapshot = Snapshot;
+    type Id = usize;
+    type Diff = Vec<(PackageId, Revision)>;
+    type Proof = ();
+
     fn name() -> &'static str {
         "hackage"
     }
@@ -87,10 +50,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         auth
     }
 
-    fn refresh_metadata(
-        &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
+    fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
         let diff_len = match self.log.len().checked_sub(snapshot_id) {
             Some(len) => len,
             None => return None, // snapshot_id is in the future!
@@ -112,9 +72,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn request_file(
         &mut self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        snapshot_id: Self::Id,
         package: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+    ) -> (Revision, Self::Proof) {
         let revision = self
             .package_revisions
             .get(package)
@@ -127,6 +87,37 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
             package_revisions: self.package_revisions.clone(),
             high_water_mark: self.log.len(),
         }
+    }
+
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
+        snapshot.high_water_mark
+    }
+
+    fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
+        snapshot.high_water_mark += diff.len();
+        for (package_id, new_revision) in diff.into_iter() {
+            snapshot.package_revisions.insert(package_id, new_revision);
+        }
+    }
+
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
+        // TODO: combine with update
+        for (package_id, new_revision) in diff.iter() {
+            let result = snapshot.package_revisions.get(package_id);
+            if matches!(result, Some(old_revision) if old_revision > new_revision) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn verify_membership(
+        snapshot: &Self::ClientSnapshot,
+        package_id: &PackageId,
+        revision: Revision,
+        _: Self::Proof,
+    ) -> bool {
+        matches!(snapshot.package_revisions.get(package_id), Some(r) if r == &revision)
     }
 }
 

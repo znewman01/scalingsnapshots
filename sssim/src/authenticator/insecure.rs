@@ -1,38 +1,15 @@
-use authenticator::ClientSnapshot;
 use serde::Serialize;
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::{
-    authenticator::{self, Revision},
-    log::PackageId,
-    util::DataSizeFromSerialize,
-};
+use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {}
 
 impl DataSizeFromSerialize for Snapshot {}
-
-impl ClientSnapshot for Snapshot {
-    type Id = ();
-    type Diff = ();
-    type Proof = ();
-
-    fn id(&self) -> Self::Id {}
-
-    fn update(&mut self, _diff: Self::Diff) {}
-
-    fn check_no_rollback(&self, _: &Self::Diff) -> bool {
-        true
-    }
-
-    fn verify_membership(&self, _: &PackageId, _: Revision, _: Self::Proof) -> bool {
-        true
-    }
-}
 
 /// An insecure authenticator.
 ///
@@ -44,34 +21,48 @@ pub struct Authenticator {}
 impl DataSizeFromSerialize for Authenticator {}
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl super::Authenticator for Authenticator {
+    type ClientSnapshot = Snapshot;
+    type Id = ();
+    type Diff = ();
+    type Proof = ();
+
     fn name() -> &'static str {
         "insecure"
+    }
+
+    fn refresh_metadata(&self, _: Self::Id) -> Option<Self::Diff> {
+        None
+    }
+
+    fn get_metadata(&self) -> Snapshot {
+        Snapshot::default()
+    }
+
+    fn publish(&mut self, _: PackageId) {}
+
+    fn request_file(&mut self, _: Self::Id, _: &PackageId) -> (Revision, Self::Proof) {
+        (Revision::default(), ())
     }
 
     fn batch_import(packages: Vec<PackageId>) -> Self {
         Self {}
     }
+    fn id(_: &Self::ClientSnapshot) -> Self::Id {}
 
-    fn refresh_metadata(
-        &self,
-        _snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
-        None
+    fn update(_: &mut Self::ClientSnapshot, _: Self::Diff) {}
+
+    fn check_no_rollback(_: &Self::ClientSnapshot, _: &Self::Diff) -> bool {
+        true
     }
 
-    fn publish(&mut self, release: PackageId) {}
-
-    fn request_file(
-        &mut self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-        file: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
-        (Revision::default(), ())
-    }
-
-    fn get_metadata(&self) -> Snapshot {
-        Snapshot::default()
+    fn verify_membership(
+        _: &Self::ClientSnapshot,
+        _: &PackageId,
+        _: Revision,
+        _: Self::Proof,
+    ) -> bool {
+        true
     }
 }
 

@@ -11,7 +11,7 @@ use uom::si::information::byte;
 use uom::si::u64::Information;
 use uom::ConstZero;
 
-use authenticator::{ClientSnapshot, Revision};
+use authenticator::Revision;
 
 use crate::util::DataSizeFromSerialize;
 use crate::{authenticator, log::PackageId, util::DataSized};
@@ -28,6 +28,7 @@ where
     s.serialize_bytes(&smtree::traits::Serializable::serialize(value))
 }
 
+/// The vanilla TUF client snapshot contains *all* the snapshot state.
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
     #[serde(serialize_with = "smtree_serialize")]
@@ -62,46 +63,6 @@ fn hash(data: &[u8]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-/// The vanilla TUF client snapshot contains *all* the snapshot state.
-impl ClientSnapshot for Snapshot {
-    type Id = Root;
-    type Diff = Self;
-    type Proof = Proof;
-
-    fn id(&self) -> Self::Id {
-        self.root.clone()
-    }
-
-    fn update(&mut self, diff: Self::Diff) {
-        self.root = diff.root
-    }
-
-    fn check_no_rollback(&self, _diff: &Self::Diff) -> bool {
-        true
-    }
-
-    fn verify_membership(
-        &self,
-        package_id: &PackageId,
-        revision: Revision,
-        proof: Self::Proof,
-    ) -> bool {
-        let expected_index = TreeIndex::new(TREE_HEIGHT, hash(package_id.0.as_bytes()));
-        let leaf = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
-        let idxs = proof.inner.get_indexes();
-        if idxs.len() != 1 {
-            return false;
-        }
-        if idxs[0] != expected_index {
-            return false;
-        }
-        if !proof.inner.verify(&leaf, &self.root) {
-            return false;
-        }
-        true
-    }
-}
-
 /// An authenticator as-in vanilla TUF.
 #[derive(Debug)]
 pub struct Authenticator {
@@ -120,7 +81,12 @@ impl Default for Authenticator {
 }
 
 #[allow(unused_variables)]
-impl authenticator::Authenticator<Snapshot> for Authenticator {
+impl super::Authenticator for Authenticator {
+    type ClientSnapshot = Snapshot;
+    type Id = Root;
+    type Diff = Snapshot;
+    type Proof = Proof;
+
     fn name() -> &'static str {
         "merkle"
     }
@@ -141,10 +107,7 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
         Self { tree, revisions }
     }
 
-    fn refresh_metadata(
-        &self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
-    ) -> Option<<Snapshot as ClientSnapshot>::Diff> {
+    fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
         let my_root = self.tree.get_root();
         if snapshot_id == my_root {
             return None;
@@ -166,9 +129,9 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
 
     fn request_file(
         &mut self,
-        snapshot_id: <Snapshot as ClientSnapshot>::Id,
+        snapshot_id: Self::Id,
         package: &PackageId,
-    ) -> (Revision, <Snapshot as ClientSnapshot>::Proof) {
+    ) -> (Revision, Self::Proof) {
         let revision = self
             .revisions
             .get(package)
@@ -183,12 +146,45 @@ impl authenticator::Authenticator<Snapshot> for Authenticator {
     fn get_metadata(&self) -> Snapshot {
         Snapshot::new(self.tree.get_root())
     }
+
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
+        snapshot.root.clone()
+    }
+
+    fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
+        snapshot.root = diff.root
+    }
+
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, _diff: &Self::Diff) -> bool {
+        true
+    }
+
+    fn verify_membership(
+        snapshot: &Self::ClientSnapshot,
+        package_id: &PackageId,
+        revision: Revision,
+        proof: Self::Proof,
+    ) -> bool {
+        let expected_index = TreeIndex::new(TREE_HEIGHT, hash(package_id.0.as_bytes()));
+        let leaf = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
+        let idxs = proof.inner.get_indexes();
+        if idxs.len() != 1 {
+            return false;
+        }
+        if idxs[0] != expected_index {
+            return false;
+        }
+        if !proof.inner.verify(&leaf, &snapshot.root) {
+            return false;
+        }
+        true
+    }
 }
 
 impl Clone for Authenticator {
     fn clone(&self) -> Self {
         let packages = self.revisions.keys().cloned().collect();
-        authenticator::Authenticator::<Snapshot>::batch_import(packages)
+        <Self as super::Authenticator>::batch_import(packages)
     }
 }
 

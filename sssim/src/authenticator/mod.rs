@@ -16,14 +16,15 @@ use serde::Serialize;
 
 use crate::{accumulator::rsa::RsaAccumulator, util::DataSizeFromSerialize};
 
+use crate::primitives::RsaGroup;
 pub use hackage::Authenticator as Hackage;
 pub use insecure::Authenticator as Insecure;
 pub use mercury_diff::Authenticator as MercuryDiff;
 pub use mercury_hash::Authenticator as MercuryHash;
 pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
 pub use merkle::Authenticator as Merkle;
-pub type Rsa = rsa::Authenticator<RsaAccumulator>;
-pub type RsaPool = rsa::PoolAuthenticator<RsaAccumulator>;
+pub type Rsa = rsa::Authenticator<RsaAccumulator<RsaGroup>>;
+pub type RsaPool = rsa::PoolAuthenticator<RsaAccumulator<RsaGroup>>;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
 use crate::{log::PackageId, util::DataSized};
@@ -99,64 +100,68 @@ impl Arbitrary for Revision {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Hash(pub [u64; 4]);
 
-// Client-side state
-pub trait ClientSnapshot {
+// Server-side state
+pub trait Authenticator: DataSized {
+    /// Client-side state
+    type ClientSnapshot: DataSized + Clone;
     /// Identifies what digest we have, so
     ///   (1) the server can give us proofs against it
     ///   (2) the server can update us appropriately
     type Id;
     /// Information needed to update our client snapshot.
-    type Diff: DataSized + Clone;
+    type Diff: Serialize + DataSized + Clone;
     /// Information neeeded to verify file membership in the snapshot.
-    type Proof: DataSized + Clone;
+    type Proof: Serialize + DataSized + Clone;
 
-    fn id(&self) -> Self::Id;
+    fn name() -> &'static str;
 
-    fn update(&mut self, diff: Self::Diff);
+    fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff>;
+
+    fn get_metadata(&self) -> Self::ClientSnapshot;
+
+    fn publish(&mut self, package: PackageId);
+
+    // TODO: we can always assume that snapshot_id is latest
+    fn request_file(
+        &mut self,
+        snapshot_id: Self::Id,
+        package: &PackageId,
+    ) -> (Revision, Self::Proof);
+
+    fn batch_import(packages: Vec<PackageId>) -> Self;
+
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id;
+
+    fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff);
 
     /// Verify that applying `diff` doesn't roll back any targets.
-    fn check_no_rollback(&self, diff: &Self::Diff) -> bool;
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool;
 
     /// Verify that `file` *is* in this snapshot.
     fn verify_membership(
-        &self,
+        snapshot: &Self::ClientSnapshot,
         package: &PackageId,
         revision: Revision,
         proof: Self::Proof,
     ) -> bool;
 }
 
-// Server-side state
-pub trait Authenticator<S: ClientSnapshot>: DataSized {
-    fn name() -> &'static str;
+pub trait BatchAuthenticator: Authenticator {
+    type BatchProof: Serialize + DataSized + Clone;
 
-    fn refresh_metadata(&self, snapshot_id: S::Id) -> Option<S::Diff>;
-
-    fn get_metadata(&self) -> S;
-
-    fn publish(&mut self, package: PackageId);
-
-    // TODO: we can always assume that snapshot_id is latest
-    fn request_file(&mut self, snapshot_id: S::Id, package: &PackageId) -> (Revision, S::Proof);
-
-    fn batch_import(packages: Vec<PackageId>) -> Self;
-}
-
-pub trait BatchClientSnapshot: ClientSnapshot {
-    type BatchProof: DataSized + Clone;
-
-    fn batch_verify(&self, packages: HashMap<PackageId, Revision>, proof: Self::BatchProof)
-        -> bool;
-}
-
-pub trait BatchAuthenticator<S: BatchClientSnapshot>: DataSized {
     fn batch_prove(
         &mut self,
         packages: Vec<PackageId>,
-    ) -> (HashMap<PackageId, Revision>, S::BatchProof);
+    ) -> (HashMap<PackageId, Revision>, Self::BatchProof);
+
+    fn batch_verify(
+        snapshot: &Self::ClientSnapshot,
+        packages: HashMap<PackageId, Revision>,
+        proof: Self::BatchProof,
+    ) -> bool;
 }
 
-pub trait PoolAuthenticator<S: BatchClientSnapshot>: DataSized + Authenticator<S> {
+pub trait PoolAuthenticator: Authenticator {
     fn batch_process(&mut self);
 }
 
@@ -171,7 +176,6 @@ pub(in crate) mod tests {
     // 4. check_no_rollback
     pub fn update<S, A>(mut client_state: S, server_state: &A) -> Result<(), TestCaseError>
     where
-        S: ClientSnapshot,
         A: Authenticator<S>,
     {
         let id = client_state.id();

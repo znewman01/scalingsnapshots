@@ -1,115 +1,78 @@
 #![allow(dead_code)]
+use crate::accumulator::{Accumulator, BatchAccumulator};
 use crate::poke;
+use crate::primitives::{Group, PositiveInteger, Prime};
+use crate::util::DataSized;
 use crate::{multiset::MultiSet, util::DataSizeFromSerialize};
-use lazy_static::lazy_static;
 use rayon::prelude::*;
+use rug::Complete;
 use rug::{ops::Pow, Integer};
 use serde::Serialize;
+use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::ops::Deref;
-
-use crate::accumulator::{Accumulator, Digest};
-
-// RSA modulus from https://en.wikipedia.org/wiki/RSA_numbers#RSA-2048
-// TODO generate a new modulus
-lazy_static! {
-    pub static ref MODULUS: Integer = Integer::parse(
-        "2519590847565789349402718324004839857142928212620403202777713783604366202070\
-           7595556264018525880784406918290641249515082189298559149176184502808489120072\
-           8449926873928072877767359714183472702618963750149718246911650776133798590957\
-           0009733045974880842840179742910064245869181719511874612151517265463228221686\
-           9987549182422433637259085141865462043576798423387184774447920739934236584823\
-           8242811981638150106748104516603773060562016196762561338441436038339044149526\
-           3443219011465754445417842402092461651572335077870774981712577246796292638635\
-           6373289912154831438167899885040445364023527381951378636564391212010397122822\
-           120720357"
-    )
-    .unwrap()
-    .into();
-    static ref GENERATOR: Integer = Integer::from(65537);
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct RsaAccumulatorDigest<G> {
+    value: G,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RsaAccumulatorDigest {
-    value: Integer,
-}
-
-impl Serialize for RsaAccumulatorDigest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.value.to_string())
+impl<G> DataSized for RsaAccumulatorDigest<G> {
+    fn size(&self) -> crate::util::Information {
+        todo!()
     }
 }
 
-impl Default for RsaAccumulatorDigest {
-    fn default() -> Self {
-        RsaAccumulatorDigest {
-            value: GENERATOR.clone(),
-        }
-    }
-}
-impl From<Integer> for RsaAccumulatorDigest {
-    fn from(value: Integer) -> Self {
+impl<G> From<G> for RsaAccumulatorDigest<G> {
+    fn from(value: G) -> Self {
         RsaAccumulatorDigest { value }
     }
 }
 
 #[derive(Clone, Serialize, Debug)]
-struct MembershipWitness(Integer);
+struct MembershipWitness<G>(G);
 
-impl MembershipWitness {
-    fn update(&mut self, value: &Integer) {
-        self.0.pow_mod_mut(value, &MODULUS).expect("member >= 0");
+impl<G: Group> MembershipWitness<G> {
+    fn update(&mut self, value: &Prime) {
+        self.0 *= value.borrow()
     }
 }
 
 #[derive(Clone, Serialize, Debug)]
-struct NonMembershipWitness {
+pub struct NonMembershipWitness<G> {
     exp: Integer,
-    base: Integer,
+    base: G,
 }
 
-impl NonMembershipWitness {
-    fn update(&mut self, value: Integer, new_element: Integer, digest: Integer) {
+impl<G: Group + 'static> NonMembershipWitness<G> {
+    fn update(&mut self, value: &Prime, new_element: Prime, digest: G) {
         // check that c^a * d^x = g
         debug_assert_eq!(
-            (digest.clone().pow_mod(&self.exp, &MODULUS).unwrap()
-                * self.base.clone().pow_mod(&value, &MODULUS).unwrap())
-                % MODULUS.clone(),
-            GENERATOR.clone(),
+            &((digest.clone() * &self.exp) + (self.base.clone() * value.inner())),
+            G::one(),
             "precondition",
         );
 
-        // If we're adding another copy of *this* value to the accumulator, no update is necessary (the proof is still against the same digest as before!).
-        if value == new_element {
+        // If we're adding another copy of *this* value to the accumulator, no
+        // update is necessary (the proof is still against the same digest as
+        // before!).
+        if value == &new_element {
             return;
         }
 
         // new_exp * member + _ * value = 1
-        let (gcd, s, t) =
-            Integer::gcd_cofactors(value.clone(), new_element.clone(), Integer::new());
+        let (gcd, s, t) = Integer::gcd_cofactors_ref(value.inner(), new_element.borrow()).into();
         debug_assert_eq!(gcd, 1u8);
 
-        let (q, r) = (self.exp.clone() * t).div_rem(value.clone());
+        let (q, r) = (self.exp.clone() * t).div_rem_ref(value.inner()).complete();
         let new_exp = r;
 
         let mut new_base = self.base.clone();
-        new_base *= digest
-            .clone()
-            .pow_mod(&(q * new_element.clone() + self.exp.clone() * s), &MODULUS)
-            .unwrap();
+        let x: Integer = q * Into::<Integer>::into(new_element.clone()) + self.exp.clone() * s;
+        new_base = new_base + digest.clone() * &x;
 
-        let c_hat = digest
-            .clone()
-            .pow_mod(&new_element, &MODULUS)
-            .expect(">= 0");
+        let c_hat = digest.clone() * new_element.borrow();
         debug_assert_eq!(
-            (c_hat.pow_mod(&new_exp, &MODULUS).unwrap()
-                * new_base.clone().pow_mod(&value, &MODULUS).unwrap())
-                % MODULUS.clone(),
-            GENERATOR.clone()
+            &(c_hat.clone() * &new_exp + new_base.clone() * value.inner()),
+            G::one(),
         );
 
         self.exp = new_exp;
@@ -118,22 +81,22 @@ impl NonMembershipWitness {
 }
 
 #[derive(Clone, Serialize, Debug)]
-pub struct Witness {
-    member: Option<MembershipWitness>,
-    nonmember: NonMembershipWitness,
+pub struct Witness<G> {
+    member: Option<MembershipWitness<G>>,
+    nonmember: NonMembershipWitness<G>,
 }
 
-impl DataSizeFromSerialize for Witness {}
+impl<G> DataSizeFromSerialize for Witness<G> where G: Serialize {}
 
-impl Witness {
-    fn new(member: MembershipWitness, nonmember: NonMembershipWitness) -> Self {
+impl<G> Witness<G> {
+    fn new(member: MembershipWitness<G>, nonmember: NonMembershipWitness<G>) -> Self {
         Witness {
             member: Some(member),
             nonmember,
         }
     }
 
-    fn for_zero(nonmember: NonMembershipWitness) -> Self {
+    fn for_zero(nonmember: NonMembershipWitness<G>) -> Self {
         Witness {
             member: None,
             nonmember,
@@ -141,122 +104,49 @@ impl Witness {
     }
 }
 
-impl RsaAccumulatorDigest {
-    fn verify_member(&self, member: &Integer, revision: u32, witness: MembershipWitness) -> bool {
-        let exponent = member.pow(&revision);
-        witness
-            .0
-            .pow_mod(&exponent.into(), &MODULUS)
-            .expect("Non negative member")
-            == self.value
+impl<G: Group + 'static> RsaAccumulatorDigest<G> {
+    fn verify_member(&self, member: &Prime, revision: u32, witness: MembershipWitness<G>) -> bool {
+        let exponent =
+            PositiveInteger::try_from(Into::<Integer>::into(member.clone()).pow(&revision))
+                .expect("prime power");
+        witness.0 * exponent.borrow() == self.value
     }
 
     #[allow(non_snake_case)]
     #[must_use]
-    fn verify_nonmember(&self, member: &Integer, witness: NonMembershipWitness) -> bool {
+    fn verify_nonmember(&self, member: &Prime, witness: NonMembershipWitness<G>) -> bool {
         // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
-
-        let temp1 = self
-            .value
-            .clone()
-            .pow_mod(&witness.exp, &MODULUS)
-            .expect("Non negative witness");
-        let temp2 = witness
-            .base
-            .pow_mod(member, &MODULUS)
-            .expect("Non negative value");
-        let actual = (temp1 * temp2) % MODULUS.deref();
-        GENERATOR.deref() == &actual
+        let l = self.value.clone() * &witness.exp;
+        let r = witness.base * member.borrow();
+        &(l + r) == G::one()
     }
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
-pub struct AppendOnlyWitness {
-    pokes: Vec<poke::Proof>,
-    values: Vec<Integer>,
+pub struct AppendOnlyWitness<G> {
+    pokes: Vec<poke::Proof<G>>,
+    values: Vec<G>,
 }
 
-impl Digest for RsaAccumulatorDigest {
-    type Witness = Witness;
-    type AppendOnlyWitness = AppendOnlyWitness;
-
-    #[must_use]
-    fn verify(&self, member: &Integer, revision: u32, witness: Self::Witness) -> bool {
-        // member@revision is valid IF
-        // (a) member@revision is in the set and
-        // (b) member is NOT in the set corresponding to the membership proof for (a)
-
-        match witness.member {
-            Some(mem_pf) => {
-                self.verify_member(member, revision, mem_pf.clone())
-                    && RsaAccumulatorDigest::from(mem_pf.0)
-                        .verify_nonmember(member, witness.nonmember)
-            }
-            None => {
-                // Special-case: revision = 0 has no membership proof.
-                revision == 0 && self.verify_nonmember(member, witness.nonmember)
-            }
-        }
-    }
-
-    #[must_use]
-    fn verify_append_only(&self, proof: &Self::AppendOnlyWitness, new_state: &Self) -> bool {
-        let mut cur = self.value.clone();
-        for (inner_proof, value) in Iterator::zip(proof.pokes.iter(), proof.values.iter()) {
-            let zku = poke::ZKUniverse {
-                modulus: &MODULUS,
-                lambda: 256,
-            };
-            let instance = poke::Instance {
-                w: value.clone(),
-                u: cur,
-            };
-            if !zku.verify(instance, inner_proof.clone()) {
-                return false;
-            }
-            cur = value.clone();
-        }
-        cur == new_state.value
+impl<G> DataSized for AppendOnlyWitness<G> {
+    fn size(&self) -> crate::util::Information {
+        todo!()
     }
 }
 
-impl DataSizeFromSerialize for HashMap<Integer, Witness> {}
+impl<G> DataSizeFromSerialize for HashMap<Prime, Witness<G>> where G: Serialize {}
 
-impl BatchDigest for RsaAccumulatorDigest {
-    type BatchWitness = HashMap<Integer, <Self as Digest>::Witness>;
+impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<G> {
+    type BatchDigest = RsaAccumulatorDigest<G>;
+    type BatchWitness = HashMap<Prime, <Self as Accumulator>::Witness>;
 
-    fn verify_batch(
-        &self,
-        members: &HashMap<Integer, u32>,
-        mut witness: Self::BatchWitness,
-    ) -> bool {
-        // TODO: do better using BBF19?
-        for (member, revision) in members {
-            let proof = match witness.remove(member) {
-                Some(proof) => proof,
-                None => {
-                    return false; // missing proof
-                }
-            };
-            if !self.verify(member, *revision, proof) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
-
-impl BatchAccumulator for RsaAccumulator {
-    fn prove_batch<I: IntoIterator<Item = Integer>>(
+    fn prove_batch<I: IntoIterator<Item = Prime>>(
         &mut self,
         entries: I,
-    ) -> (
-        HashMap<Integer, u32>,
-        <<Self as Accumulator>::Digest as BatchDigest>::BatchWitness,
-    ) {
+    ) -> (HashMap<Prime, u32>, Self::BatchWitness) {
         // TODO: do better using BBF19
-        let mut counts: HashMap<Integer, u32> = Default::default();
-        let mut proofs: HashMap<Integer, <Self::Digest as Digest>::Witness> = Default::default();
+        let mut counts: HashMap<Prime, u32> = Default::default();
+        let mut proofs: HashMap<Prime, Self::Witness> = Default::default();
         for member in entries {
             let revision = self.get(&member);
             let proof = self.prove(&member, revision).unwrap();
@@ -266,23 +156,20 @@ impl BatchAccumulator for RsaAccumulator {
         (counts, proofs)
     }
 
-    fn increment_batch<I: IntoIterator<Item = Integer>>(
+    fn increment_batch<I: IntoIterator<Item = Prime>>(
         &mut self,
         members: I,
-    ) -> Option<<<Self as Accumulator>::Digest as Digest>::AppendOnlyWitness> {
+    ) -> Option<Self::AppendOnlyWitness> {
         let old_digest = self.digest.clone();
 
         // TODO: parallelize but that's tricky
         let mut exponent = Integer::from(1u8);
         for member in members {
             self.increment(member.clone());
-            exponent *= member;
+            exponent *= Into::<Integer>::into(member);
         }
 
-        let zku = poke::ZKUniverse {
-            modulus: &MODULUS,
-            lambda: 256,
-        };
+        let zku = poke::ZKUniverse::default();
         let instance = poke::Instance {
             w: old_digest.value,
             u: self.digest.value.clone(),
@@ -294,20 +181,40 @@ impl BatchAccumulator for RsaAccumulator {
             values: vec![self.digest.value.clone()],
         })
     }
+
+    fn verify_batch(
+        digest: &Self::BatchDigest,
+        members: &HashMap<Prime, u32>,
+        mut witness: Self::BatchWitness,
+    ) -> bool {
+        // TODO: do better using BBF19?
+        for (member, revision) in members {
+            let proof = match witness.remove(member) {
+                Some(proof) => proof,
+                None => {
+                    return false; // missing proof
+                }
+            };
+            if !Self::verify(digest, member, *revision, proof) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
 
 #[derive(Default, Debug, Clone, Serialize)]
-struct SkipListEntry {
+struct SkipListEntry<G> {
     //list of proofs from node n
-    proofs: Vec<poke::Proof>,
+    proofs: Vec<poke::Proof<G>>,
 }
 
-impl SkipListEntry {
-    fn add(&mut self, new: poke::Proof) {
+impl<G: Group> SkipListEntry<G> {
+    fn add(&mut self, new: poke::Proof<G>) {
         self.proofs.push(new);
     }
 
-    fn find_next(&self, offset: usize) -> (poke::Proof, usize) {
+    fn find_next(&self, offset: usize) -> (poke::Proof<G>, usize) {
         for (i, proof) in self.proofs.iter().enumerate().rev() {
             if 1 << i <= offset {
                 return (proof.clone(), 1 << i);
@@ -318,28 +225,34 @@ impl SkipListEntry {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize)]
-pub struct RsaAccumulator {
-    digest: RsaAccumulatorDigest,
-    multiset: MultiSet<Integer>,
-    proof_cache: HashMap<Integer, Witness>,
-    nonmember_proof_cache: HashMap<Integer, NonMembershipWitness>,
-    digest_history: Vec<RsaAccumulatorDigest>,
-    increment_history: Vec<Integer>,
-    append_only_proofs: Vec<SkipListEntry>,
-    digests_to_indexes: HashMap<RsaAccumulatorDigest, usize>,
+#[derive(Default, Debug, Clone)]
+pub struct RsaAccumulator<G> {
+    digest: RsaAccumulatorDigest<G>,
+    multiset: MultiSet<Prime>,
+    proof_cache: HashMap<Prime, Witness<G>>,
+    nonmember_proof_cache: HashMap<Prime, NonMembershipWitness<G>>,
+    digest_history: Vec<RsaAccumulatorDigest<G>>,
+    increment_history: Vec<Prime>,
+    append_only_proofs: Vec<SkipListEntry<G>>,
+    digests_to_indexes: HashMap<RsaAccumulatorDigest<G>, usize>,
     exponent: Integer,
+}
+
+impl<G> DataSized for RsaAccumulator<G> {
+    fn size(&self) -> crate::util::Information {
+        todo!()
+    }
 }
 
 static PRECOMPUTE_CHUNK_SIZE: usize = 4;
 
 /// returns (Vec<Witness>, digest, exponent)
-fn precompute_helper(
-    values: &[Integer],
+fn precompute_helper<G: Group + 'static>(
+    values: &[Prime],
     counts: &[u32],
-    proof: NonMembershipWitness,
-    g: Integer,
-) -> (Vec<Witness>, Integer, Integer) {
+    proof: NonMembershipWitness<G>,
+    g: G,
+) -> (Vec<Witness<G>>, G, Integer) {
     debug_assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
         panic!("slice len should not be 0");
@@ -348,9 +261,8 @@ fn precompute_helper(
         debug_assert!(
             RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values[0], proof.clone())
         );
-        let exponent = values[0].clone() * counts[0];
-        let mut digest = g.clone();
-        digest.pow_mod_mut(&exponent, &MODULUS).unwrap();
+        let exponent = Integer::from(values[0].clone()) * counts[0];
+        let digest = g.clone() * &exponent;
         return (
             vec![Witness {
                 member: Some(MembershipWitness(g)),
@@ -369,25 +281,24 @@ fn precompute_helper(
     let mut members_star: Option<Integer> = None;
     let mut g_left = g.clone();
     let mut g_right = g.clone();
-    let mut g_star: Option<Integer> = None;
+    let mut g_star: Option<G> = None;
     for idx in 0..values.len() {
         let value = values[idx].clone();
         let count = counts[idx];
-        let member = value.clone().pow(count);
+        let member = Integer::from(value.clone()).pow(count);
         if idx < split_idx {
-            values_left *= value;
-            g_left.pow_mod_mut(&member, &MODULUS).expect(">= 0");
+            g_left *= &member.clone();
+            values_left *= Integer::from(value);
             members_left *= member;
         } else {
-            g_right.pow_mod_mut(&member, &MODULUS).expect(">= 0");
-            values_right *= value.clone();
+            g_right *= &member.clone();
+            values_right *= Integer::from(value.clone());
             members_right *= member.clone();
 
             g_star
                 .get_or_insert_with(|| g_left.clone())
-                .pow_mod_mut(&member, &MODULUS)
-                .expect(">= 0");
-            *values_star.get_or_insert_with(|| values_left.clone()) *= value;
+                .mul_assign(&member.clone());
+            *values_star.get_or_insert_with(|| values_left.clone()) *= Integer::from(value);
             *members_star.get_or_insert_with(|| members_left.clone()) *= member;
         }
     }
@@ -395,13 +306,12 @@ fn precompute_helper(
     let members_star = members_star.unwrap();
     let values_star = values_star.unwrap();
     debug_assert!(RsaAccumulatorDigest::from(g_star.clone()).verify_member(
-        &members_star,
+        &Prime::new_unchecked(members_star.clone()),
         1,
         MembershipWitness(g.clone())
     ));
-    debug_assert!(
-        RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values_star, proof.clone())
-    );
+    debug_assert!(RsaAccumulatorDigest::from(g.clone())
+        .verify_nonmember(&Prime::new_unchecked(values_star), proof.clone()));
 
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
@@ -411,19 +321,9 @@ fn precompute_helper(
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_left
     let (q, r) = at.clone().div_rem(values_left.clone());
-    let mut b_left = g
-        .clone()
-        .pow_mod(&(q * members_right.clone()), &MODULUS)
-        .expect(">= 0");
-    b_left *= g
-        .clone()
-        .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
-        .expect(">= 0");
-    b_left *= proof
-        .base
-        .clone()
-        .pow_mod(&(values_right.clone()), &MODULUS)
-        .expect(">= 0");
+    let mut b_left = g.clone() * &(q * members_right.clone());
+    b_left += g.clone() * &(proof.exp.clone() * s.clone());
+    b_left += proof.base.clone() * &values_right;
     let proof_left = NonMembershipWitness {
         exp: r,
         base: b_left,
@@ -436,38 +336,28 @@ fn precompute_helper(
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_right
     let (q, r) = at.clone().div_rem(values_right.clone());
-    let mut b_right = g
-        .clone()
-        .pow_mod(&(q * members_left.clone()), &MODULUS)
-        .expect(">= 0");
-    b_right *= g
-        .clone()
-        .pow_mod(&(proof.exp.clone() * s.clone()), &MODULUS)
-        .expect(">= 0");
-    b_right *= proof
-        .base
-        .clone()
-        .pow_mod(&(values_left.clone()), &MODULUS)
-        .expect(">= 0");
+    let mut b_right = g.clone() * &(q * members_left.clone());
+    b_right += g.clone() * &(proof.exp.clone() * s.clone());
+    b_right += proof.base.clone() * &values_left;
     let proof_right = NonMembershipWitness {
         exp: r,
         base: b_right,
     };
 
     debug_assert!(RsaAccumulatorDigest::from(g_left.clone()).verify_member(
-        &members_left,
+        &Prime::new_unchecked(members_left),
         1,
         MembershipWitness(g.clone())
     ));
     debug_assert!(RsaAccumulatorDigest::from(g_right.clone()).verify_member(
-        &members_right,
+        &Prime::new_unchecked(members_right),
         1,
         MembershipWitness(g.clone())
     ));
     debug_assert!(RsaAccumulatorDigest::from(g_right.clone())
-        .verify_nonmember(&values_left, proof_left.clone()));
+        .verify_nonmember(&Prime::new_unchecked(values_left), proof_left.clone()));
     debug_assert!(RsaAccumulatorDigest::from(g_left.clone())
-        .verify_nonmember(&values_right, proof_right.clone()));
+        .verify_nonmember(&Prime::new_unchecked(values_right), proof_right.clone()));
 
     debug_assert_eq!(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
@@ -517,41 +407,42 @@ fn precompute_helper(
 }
 
 /// Returns (Vec<Witness>, digest, exponent)
-fn precompute(values: &[Integer], counts: &[u32]) -> (Vec<Witness>, Integer, Integer) {
+fn precompute<G: Group + 'static>(
+    values: &[Prime],
+    counts: &[u32],
+) -> (Vec<Witness<G>>, G, Integer) {
     let mut e_star = Integer::from(1u8);
     for (value, count) in std::iter::zip(values.iter(), counts) {
-        e_star *= value.clone().pow(count);
+        e_star *= Integer::from(value.clone()).pow(count);
     }
 
     // a * 1 + b * e_star = 1
     let (gcd, a, b) = Integer::gcd_cofactors(1u8.into(), e_star.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
-    let mut base = GENERATOR.clone();
-    base.pow_mod_mut(&b, &MODULUS).expect(">= 0");
+    let base = G::default() * &b;
     let proof = NonMembershipWitness { exp: a, base };
 
-    precompute_helper(values, counts, proof, GENERATOR.clone())
+    precompute_helper(values, counts, proof, G::default())
 }
 
-impl RsaAccumulator {
+impl<G: Group + 'static> RsaAccumulator<G> {
     #[must_use]
-    fn prove_member(&self, member: &Integer, revision: u32) -> Option<MembershipWitness> {
-        debug_assert!(member >= &0);
+    fn prove_member(&self, member: &Prime, revision: u32) -> Option<MembershipWitness<G>> {
+        debug_assert!(<Prime as Borrow<Integer>>::borrow(member) >= &0);
         if revision > self.multiset.get(member) {
             return None;
         }
-        let mut res = GENERATOR.clone();
+        let mut res = G::default();
         for (s, count) in self.multiset.iter() {
             if s != member {
-                let exp = Integer::from(s.pow(count));
-                res.pow_mod_mut(&exp, &MODULUS).expect("member > 0");
+                res *= &Integer::from(s.clone()).pow(count);
             }
         }
         Some(MembershipWitness(res))
     }
 
     #[must_use]
-    fn prove_nonmember_uncached(&self, value: &Integer) -> Option<NonMembershipWitness> {
+    fn prove_nonmember_uncached(&self, value: &Prime) -> Option<NonMembershipWitness<G>> {
         // https://link.springer.com/content/pdf/10.1007/978-3-540-72738-5_17.pdf
         if self.multiset.get(value) != 0 {
             return None; // value is a member!
@@ -559,19 +450,17 @@ impl RsaAccumulator {
 
         // Bezout coefficients:
         // gcd: exp * s + value * t = 1
-        let (gcd, s, t) = Integer::gcd_cofactors_ref(&self.exponent, value).into();
+        let (gcd, s, t) = Integer::gcd_cofactors_ref(&self.exponent, value.borrow()).into();
         if gcd != 1u8 {
             unreachable!("value should be coprime with the exponent of the accumulator");
         }
-        debug_assert!(&s < value); // s should be small-ish
+        debug_assert!(&s < value.inner()); // s should be small-ish
 
-        let d = GENERATOR.clone().pow_mod(&t, &MODULUS).unwrap();
+        let d = G::default() * &t;
 
         debug_assert_eq!(
-            (self.digest.value.clone().pow_mod(&s, &MODULUS).unwrap()
-                * d.clone().pow_mod(&value, &MODULUS).unwrap())
-                % MODULUS.clone(),
-            GENERATOR.clone(),
+            &((self.digest.value.clone() * &s) + (d.clone() * value.inner())),
+            G::one(),
             "initially generating nonmembership proof failed"
         );
 
@@ -579,7 +468,7 @@ impl RsaAccumulator {
     }
 
     #[must_use]
-    fn prove_nonmember(&mut self, value: &Integer) -> Option<NonMembershipWitness> {
+    fn prove_nonmember(&mut self, value: &Prime) -> Option<NonMembershipWitness<G>> {
         if let Some(proof) = self.nonmember_proof_cache.get(value) {
             return Some(proof.clone());
         }
@@ -600,23 +489,25 @@ fn find_max_pow(mut index: usize) -> usize {
     max_pow
 }
 
-impl Accumulator for RsaAccumulator {
-    type Digest = RsaAccumulatorDigest;
+impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G> {
+    type Digest = RsaAccumulatorDigest<G>;
+    type Witness = Witness<G>;
+    type AppendOnlyWitness = AppendOnlyWitness<G>;
+    type NonMembershipWitness = NonMembershipWitness<G>;
+
     #[must_use]
-    fn digest(&self) -> &RsaAccumulatorDigest {
+    fn digest(&self) -> &Self::Digest {
         &self.digest
     }
 
     /// O(N)
-    fn increment(&mut self, member: Integer) {
-        debug_assert!(member >= 0u8);
+    fn increment(&mut self, member: Prime) {
+        debug_assert!(member.inner() >= &0u8);
 
         // We need to update every membership proof, *except* our own!
         self.proof_cache.par_iter_mut().for_each(|(value, proof)| {
             let digest = proof.member.clone().unwrap().0.clone();
-            proof
-                .nonmember
-                .update(value.clone(), member.clone(), digest);
+            proof.nonmember.update(value, member.clone(), digest);
             if value == &member {
                 return;
             }
@@ -637,10 +528,7 @@ impl Accumulator for RsaAccumulator {
         }
 
         // Update the digest to add the member.
-        self.digest
-            .value
-            .pow_mod_mut(&member, &MODULUS)
-            .expect("member should be >=0");
+        self.digest.value *= member.borrow();
         self.multiset.insert(member.clone());
 
         self.increment_history.push(member.clone());
@@ -659,15 +547,12 @@ impl Accumulator for RsaAccumulator {
             self.digest_history.iter().rev(),
             0..(1 << max_pow)
         ) {
-            exponent *= member;
+            exponent *= member.inner();
             let instance = poke::Instance {
                 w: self.digest.value.clone(),
                 u: old_digest.value.clone(),
             };
-            let zku = poke::ZKUniverse {
-                modulus: &MODULUS,
-                lambda: 256,
-            };
+            let zku = poke::ZKUniverse::<G>::default();
 
             //check if cur_index is a power of 2 or is equal to 1
             // (power of 2 - 1 is all 1s)
@@ -691,10 +576,7 @@ impl Accumulator for RsaAccumulator {
     }
 
     #[must_use]
-    fn prove_append_only(
-        &self,
-        prefix: &Self::Digest,
-    ) -> <Self::Digest as Digest>::AppendOnlyWitness {
+    fn prove_append_only(&self, prefix: &Self::Digest) -> Self::AppendOnlyWitness {
         if &self.digest == prefix {
             panic!("identical");
         }
@@ -716,7 +598,7 @@ impl Accumulator for RsaAccumulator {
         }
     }
 
-    fn prove(&mut self, member: &Integer, revision: u32) -> Option<Witness> {
+    fn prove(&mut self, member: &Prime, revision: u32) -> Option<Witness<G>> {
         if self.multiset.get(member) != revision {
             return None;
         }
@@ -726,13 +608,13 @@ impl Accumulator for RsaAccumulator {
         self.proof_cache.get(member).cloned()
     }
 
-    fn get(&self, member: &Integer) -> u32 {
+    fn get(&self, member: &Prime) -> u32 {
         self.multiset.get(member)
     }
 
-    fn import(multiset: MultiSet<Integer>) -> Self {
+    fn import(multiset: MultiSet<Prime>) -> Self {
         // Precompute membership proofs:
-        let mut values = Vec::<Integer>::with_capacity(multiset.len());
+        let mut values = Vec::<Prime>::with_capacity(multiset.len());
         let mut counts = Vec::<u32>::with_capacity(multiset.len());
         for (value, count) in multiset.iter() {
             values.push(value.clone());
@@ -740,7 +622,7 @@ impl Accumulator for RsaAccumulator {
         }
         let (mut proofs, digest, exponent) = precompute(&values, &counts);
 
-        let mut proof_cache: HashMap<Integer, Witness> = Default::default();
+        let mut proof_cache: HashMap<Prime, Witness<G>> = Default::default();
         for _ in 0..values.len() {
             let value = values.pop().unwrap();
             let witness = proofs.pop().unwrap();
@@ -748,7 +630,7 @@ impl Accumulator for RsaAccumulator {
         }
 
         let digest = RsaAccumulatorDigest::from(digest);
-        let mut digests_to_indexes: HashMap<RsaAccumulatorDigest, usize> = Default::default();
+        let mut digests_to_indexes: HashMap<RsaAccumulatorDigest<G>, usize> = Default::default();
         digests_to_indexes.insert(digest.clone(), 0);
         Self {
             digest: digest.clone(),
@@ -762,15 +644,58 @@ impl Accumulator for RsaAccumulator {
             exponent,
         }
     }
+
+    #[must_use]
+    fn verify(
+        digest: &Self::Digest,
+        member: &Prime,
+        revision: u32,
+        witness: Self::Witness,
+    ) -> bool {
+        // member@revision is valid IF
+        // (a) member@revision is in the set and
+        // (b) member is NOT in the set corresponding to the membership proof for (a)
+
+        match witness.member {
+            Some(mem_pf) => {
+                digest.verify_member(member, revision, mem_pf.clone())
+                    && RsaAccumulatorDigest::from(mem_pf.0)
+                        .verify_nonmember(member, witness.nonmember)
+            }
+            None => {
+                // Special-case: revision = 0 has no membership proof.
+                revision == 0 && digest.verify_nonmember(member, witness.nonmember)
+            }
+        }
+    }
+
+    #[must_use]
+    fn verify_append_only(
+        digest: &Self::Digest,
+        proof: &Self::AppendOnlyWitness,
+        new_state: &Self::Digest,
+    ) -> bool {
+        let mut cur = digest.value.clone();
+        for (inner_proof, value) in Iterator::zip(proof.pokes.iter(), proof.values.iter()) {
+            let zku = poke::ZKUniverse::<G>::default();
+            let instance = poke::Instance {
+                w: value.clone(),
+                u: cur,
+            };
+            if !zku.verify(instance, inner_proof.clone()) {
+                return false;
+            }
+            cur = value.clone();
+        }
+        cur == new_state.value
+    }
 }
 
 #[cfg(test)]
 use proptest::prelude::*;
 
-use super::{BatchAccumulator, BatchDigest};
-
 #[cfg(test)]
-impl Arbitrary for RsaAccumulator {
+impl<G> Arbitrary for RsaAccumulator<G> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
     fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {

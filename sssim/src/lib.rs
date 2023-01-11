@@ -7,5 +7,6 @@ pub mod multiset;
 mod poke;
 pub mod simulator;
 pub mod util;
+pub mod primitives;
 
 pub use authenticator::{Authenticator, BatchAuthenticator, PoolAuthenticator};

@@ -17,7 +17,7 @@
         pkgs = import nixpkgs { inherit system; };
         rust = fenix.packages.${system}.fromToolchainFile {
           dir = ./.;
-          sha256 = "/nC+LSETp1A78j+uU7TcCHnmLgjEtcIm809GTnNNdYE=";
+          sha256 = "sha256-rSeLZ/Kx5HiZYq+tsDtWPPktbGKhodWCPryRG6CZSxU=";
         };
         naersk-lib = naersk.lib.${system}.override {
           rustc = rust;

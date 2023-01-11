@@ -5,9 +5,17 @@ use std::{collections::HashMap, hash::Hash};
 use rug::Integer;
 use serde::{ser::SerializeMap, Serialize};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
     pub inner: HashMap<T, u32>,
+}
+
+impl<T: Hash + Eq> Default for MultiSet<T> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
 }
 
 impl Serialize for MultiSet<Integer> {
