@@ -164,22 +164,103 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
 
         // TODO: parallelize but that's tricky
         let mut exponent = Integer::from(1u8);
+
+        let mut members_hashmap = HashMap::<Prime, u32>::default();
         for member in members {
-            self.increment(member.clone());
-            exponent *= Into::<Integer>::into(member);
+            exponent *= member.inner().clone();
+            *members_hashmap.entry(member).or_insert(0) += 1;
+        }
+        let exponent = Prime::new_unchecked(exponent);
+
+        self.proof_cache.par_iter_mut().for_each(|(value, proof)| {
+            let digest = proof.member.clone().unwrap().0;
+            proof.nonmember.update(&value, exponent.clone(), digest);
+            // for all members that equal value: divide by member
+            let update_val = match members_hashmap.get(value) {
+                Some(count) => Prime::new_unchecked(
+                    exponent.clone().into_inner() / Integer::from(value.inner().pow(count)),
+                ),
+                None => exponent.clone(),
+            };
+            proof.member.as_mut().unwrap().update(&update_val);
+        });
+
+        // TODO: make n log n
+        for (member, count) in &members_hashmap {
+            if self.proof_cache.get_mut(member).is_none() {
+                let membership_proof = MembershipWitness(
+                    self.digest.value.clone()
+                        * &(exponent.inner().clone() / member.inner().pow(count).complete()),
+                );
+                let mut nonmember_proof = self
+                    .nonmember_proof_cache
+                    .remove(member)
+                    .unwrap_or_else(|| self.prove_nonmember_uncached(&member).unwrap());
+                nonmember_proof.update(
+                    &member,
+                    exponent.clone(),
+                    membership_proof.clone().0.clone(),
+                );
+                let proof = Witness {
+                    member: Some(membership_proof),
+                    nonmember: nonmember_proof,
+                };
+                self.proof_cache.insert(member.clone(), proof);
+            }
         }
 
-        let zku = poke::ZKUniverse::default();
-        let instance = poke::Instance {
-            w: old_digest.value,
-            u: self.digest.value.clone(),
-        };
-        let witness = poke::Witness { x: exponent };
-        let proof = zku.prove(instance, witness);
-        Some(AppendOnlyWitness {
-            pokes: vec![proof],
-            values: vec![self.digest.value.clone()],
-        })
+        self.digest.value *= exponent.inner();
+        for (member, count) in members_hashmap {
+            for _ in 0..count {
+                self.multiset.insert(member.clone());
+            }
+        }
+
+        self.increment_history.push(exponent.clone());
+
+        // Add a *slot* for the new append-only proof.
+        self.append_only_proofs.push(SkipListEntry::default());
+        assert_eq!(self.increment_history.len(), self.append_only_proofs.len());
+        assert_eq!(self.increment_history.len(), self.digest_history.len());
+
+        let mut history_exponent = Integer::from(1u8);
+        let index = self.increment_history.len();
+        let max_pow = find_max_pow(index);
+
+        for (member, proof_slot, old_digest, cur_index) in itertools::izip!(
+            self.increment_history.iter().rev(),
+            self.append_only_proofs.iter_mut().rev(),
+            self.digest_history.iter().rev(),
+            0..(1 << max_pow)
+        ) {
+            history_exponent *= member.inner();
+            let instance = poke::Instance {
+                w: self.digest.value.clone(),
+                u: old_digest.value.clone(),
+            };
+            let zku = poke::ZKUniverse::default();
+
+            //check if cur_index is a power of 2 or is equal to 1
+            // (power of 2 - 1 is all 1s)
+            if cur_index != 0 && cur_index & (cur_index - 1) == 0 {
+                proof_slot.add(zku.prove(
+                    instance,
+                    poke::Witness {
+                        x: history_exponent.clone(),
+                    },
+                ))
+            }
+        }
+
+        // Update the digest history.
+        self.digest_history.push(self.digest.clone());
+        self.digests_to_indexes
+            .insert(self.digest.clone(), self.digest_history.len() - 1);
+
+        // Invalidate the nonmembership proof cache.
+        self.nonmember_proof_cache = Default::default();
+
+        Some(self.prove_append_only(&old_digest))
     }
 
     fn verify_batch(
