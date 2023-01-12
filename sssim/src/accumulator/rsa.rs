@@ -144,7 +144,7 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
         &mut self,
         entries: I,
     ) -> (HashMap<Prime, u32>, Self::BatchWitness) {
-        // TODO: do better using BBF19
+        // TODO(maybe): do better using BBF19
         let mut counts: HashMap<Prime, u32> = Default::default();
         let mut proofs: HashMap<Prime, Self::Witness> = Default::default();
         for member in entries {
@@ -184,7 +184,7 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
             proof.member.as_mut().unwrap().update(&update_val);
         });
 
-        // TODO: make n log n
+        // TODO(maybe): make n log n
         for (member, count) in &members_hashmap {
             if self.proof_cache.get_mut(member).is_none() {
                 let exponent = exponent.inner().clone() / member.inner().pow(count).complete();
@@ -266,7 +266,7 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
         members: &HashMap<Prime, u32>,
         mut witness: Self::BatchWitness,
     ) -> bool {
-        // TODO: do better using BBF19?
+        // TODO(maybe): do better using BBF19?
         for (member, revision) in members {
             let proof = match witness.remove(member) {
                 Some(proof) => proof,

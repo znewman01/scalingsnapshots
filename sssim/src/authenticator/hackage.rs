@@ -101,7 +101,7 @@ impl super::Authenticator for Authenticator {
     }
 
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
-        // TODO: combine with update
+        // TODO(maybe): combine with update
         for (package_id, new_revision) in diff.iter() {
             let result = snapshot.package_revisions.get(package_id);
             if matches!(result, Some(old_revision) if old_revision > new_revision) {
@@ -127,7 +127,7 @@ mod tests {
     use crate::authenticator::tests;
 
     proptest! {
-        #[ignore] // TODO: fix tests::update
+        #[ignore] // TODO(test): fix tests::update
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
             tests::update(snapshot, &authenticator)?;

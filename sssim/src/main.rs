@@ -281,7 +281,7 @@ where
             let (update_time, _) = Duration::time_fn(|| {
                 auth.publish(package_id);
             });
-            let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+            let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
             insert_update_result(
                 db,
                 A::name(),
@@ -298,7 +298,7 @@ where
         let (merge_time, _) = Duration::time_fn(|| {
             auth.batch_process();
         });
-        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
         insert_merge_result(
             db,
             A::name(),
@@ -333,7 +333,7 @@ where
             auth.publish(package_id);
         });
 
-        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
         insert_update_result(
             db,
             A::name(),
@@ -362,10 +362,10 @@ where
 {
     let mut auth = None;
     for _ in 0..num_trials {
-        // TODO: hook for progress reporting in batch_import?
+        // TODO(must): hook for progress reporting in batch_import?
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
-        let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
         let cores = 1;
         insert_precompute_result(
             db,
@@ -560,7 +560,7 @@ where
     static DOWNLOAD_TRIALS: u16 = 3;
 
     let num_packages = packages.len();
-    //TODO: don't hard code
+    //TODO(must): don't hard code
     let batch_size: u16 = 5;
 
     let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;

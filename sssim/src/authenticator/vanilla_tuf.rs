@@ -1,10 +1,8 @@
-//! TODO: this is Mercury, not vanilla TUF.
+//! TODO(maybe): this is Mercury, not vanilla TUF.
 //! Vanilla TUF downloads *all* metadata:
 //! - snapshot: map from filename to HASH of targets metadata
 //! - targets metadata, which includes version number
 //!   - only new targets, because duh
-//!
-//! TODO: delta variant of Mercury
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -17,7 +15,6 @@ use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct Snapshot {
-    // TODO: wrap packages in smart pointer
     packages: HashMap<PackageId, Revision>,
     id: u64,
 }
@@ -133,7 +130,7 @@ mod tests {
     use crate::authenticator::tests;
 
     proptest! {
-        #[ignore] // TODO: fix tests::update
+        #[ignore] // TODO(test): fix tests::update
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
             tests::update(snapshot, &authenticator)?;

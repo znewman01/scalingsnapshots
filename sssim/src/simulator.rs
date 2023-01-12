@@ -27,7 +27,7 @@ pub struct ResourceUsage {
     pub server_compute: Duration,
     /// Client-side computation time used to handle this request.
     #[serde(rename = "user_compute_ns", serialize_with = "serialize_ns")]
-    pub user_compute: Duration, // TODO: make optional
+    pub user_compute: Duration, // TODO(meh): make optional
     #[serde(rename = "bandwidth_bytes")]
     pub bandwidth: Information,
     #[serde(rename = "server_storage_bytes")]
@@ -38,9 +38,6 @@ pub struct ResourceUsage {
 ///
 /// Handles what we care about (timing, bandwidth, storage) and ignores what we
 /// don't (actual network calls).
-///
-/// TODO: user state?
-/// TODO: manage TUF repo?
 #[derive(Debug)]
 pub struct Simulator<A: Authenticator> {
     authenticator: A,
@@ -49,7 +46,7 @@ pub struct Simulator<A: Authenticator> {
     package_lengths: HashMap<PackageId, u64>,
 }
 
-// TODO: investigate the clones, see if you can get rid of them
+// TODO(maybe): investigate the clones, see if you can get rid of them
 impl<A: Authenticator> Simulator<A>
 where
     A::ClientSnapshot: Default,
@@ -98,8 +95,6 @@ where
         // Answer the update metadata server-side.
         let (server_compute, maybe_snapshot_diff) =
             Duration::time_fn(|| self.authenticator.refresh_metadata(A::id(&snapshot)));
-
-        // TODO: make this a 2 part dance
 
         let snapshot_size = maybe_snapshot_diff
             .as_ref()
@@ -150,7 +145,6 @@ where
     }
 
     pub fn process(&mut self, action: &mut Action) -> ResourceUsage {
-        // TODO: batch publish?
         match action {
             Action::Download { user, package } => self.process_download(user.clone(), package),
             Action::RefreshMetadata { user } => self.process_refresh_metadata(user.clone()),

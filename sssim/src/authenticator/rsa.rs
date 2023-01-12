@@ -81,7 +81,7 @@ impl<A: Accumulator> DataSized for Diff<A> {
 pub struct Authenticator<A: Accumulator> {
     acc: A,
     log: Vec<Prime>,
-    old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize>, // TODO: consider giving this usize to the client in this snapshot
+    old_acc_idxs: HashMap<<A as Accumulator>::Digest, usize>, // TODO(maybe): consider giving this usize to the client in this snapshot
 }
 
 impl<A> Authenticator<A>
@@ -322,7 +322,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    // TODO: fix tests
+    // TODO(test): fix tests
 }
 
 #[derive(Clone, Debug, Derivative)]
@@ -347,7 +347,7 @@ struct CatchUpToEODProof<A: BatchAccumulator> {
     bod_package_counts: HashMap<PackageId, u32>,
     bod_package_membership_witness: A::BatchWitness,
     eod_package_membership_witness: A::BatchWitness,
-    bod_to_eod: A::AppendOnlyWitness, // TODO: missing? bod->eod append only witness
+    bod_to_eod: A::AppendOnlyWitness, // TODO(maybe): missing? bod->eod append only witness
 }
 
 impl<A: BatchAccumulator> CatchUpToEODProof<A>
@@ -728,7 +728,7 @@ where
         snapshot.pool = diff.latest_pool;
     }
 
-    // TODO: special-case for RSA accumulators
+    // TODO(maybe): verify that we're doing special-case for RSA accumulators
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
         match (
             diff.current_day_final_digest.as_ref(),

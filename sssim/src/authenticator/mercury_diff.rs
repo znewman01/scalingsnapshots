@@ -90,7 +90,7 @@ impl super::Authenticator for Authenticator {
     }
 
     fn publish(&mut self, package: PackageId) {
-        // TODO: this is slow, consider using log data structure
+        // TODO(meh): this is slow, consider using log data structure
         // also consider using immutable map
         self.snapshots
             .insert(self.snapshot.id, self.snapshot.clone());
@@ -166,7 +166,7 @@ mod tests {
     use crate::authenticator::tests;
 
     proptest! {
-        #[ignore] // TODO: fix tests::update
+        #[ignore] // TODO(test): fix tests::update
         #[test]
         fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
             tests::update(snapshot, &authenticator)?;

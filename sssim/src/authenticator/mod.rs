@@ -121,7 +121,7 @@ pub trait Authenticator: DataSized {
 
     fn publish(&mut self, package: PackageId);
 
-    // TODO: we can always assume that snapshot_id is latest
+    // TODO(maybe): we can always assume that snapshot_id is latest
     fn request_file(
         &mut self,
         snapshot_id: Self::Id,
@@ -169,11 +169,6 @@ pub trait PoolAuthenticator: Authenticator {
 pub(in crate) mod tests {
     use super::*;
 
-    // TODO: should take server state, publish operations.
-    // 1. init client state
-    // 2. publish
-    // 3. refresh_metadata
-    // 4. check_no_rollback
     pub fn update<S, A>(mut client_state: S, server_state: &A) -> Result<(), TestCaseError>
     where
         A: Authenticator<S>,

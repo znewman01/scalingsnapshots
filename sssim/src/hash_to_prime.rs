@@ -43,7 +43,7 @@ pub fn hash_to_prime(data: &[u8]) -> Result<Prime, HashToPrimeError> {
     let digits: usize = 32;
     let mut bar = IntegerHasher::new(data, digits);
 
-    // TODO: calculate how many times we should actually do this.
+    // TODO(maybe): calculate how many times we should actually do this.
     // It appears to be between 10,000 and 100,000.
     for _ in 0..10000 {
         if let Ok(prime) = Prime::try_from(bar.hash()) {

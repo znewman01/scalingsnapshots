@@ -51,7 +51,7 @@ impl<G: Group + TryFrom<Integer> + 'static> ZKUniverse<G> {
         let bytes = G::bytes();
         let mut hasher = IntegerHasher::new(data_str.as_bytes(), bytes);
         loop {
-            // TODO: replace with fancier rejection sampling
+            // TODO(maybe): replace with fancier rejection sampling
             if let Ok(value) = G::try_from(hasher.hash()) {
                 return value;
             }

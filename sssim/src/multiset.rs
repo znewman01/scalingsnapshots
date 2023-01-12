@@ -74,7 +74,7 @@ impl<T: Hash + Eq> MultiSet<T> {
     }
 
     pub fn difference<'a>(&'a self, other: &Self) -> Vec<(&'a T, u32)> {
-        // TODO: make it return a real iterator
+        // TODO(maybe): make it return a real iterator
         let mut results: Vec<(&T, u32)> = vec![];
         for (key, count) in self.inner.iter() {
             let diff: u32 = count

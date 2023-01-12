@@ -9,7 +9,6 @@ pub trait DataSized {
 
 pub trait DataSizeFromSerialize: Serialize {}
 
-// TODO: we should probably have a derive macro for this
 impl<T: DataSizeFromSerialize> DataSized for T {
     fn size(&self) -> Information {
         Information::new::<byte>(

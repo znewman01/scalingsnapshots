@@ -190,7 +190,7 @@ impl Clone for Authenticator {
 
 impl DataSized for Authenticator {
     fn size(&self) -> Information {
-        // TODO: better to serialize then figure out the size?
+        // TODO(maybe): better to serialize then figure out the size?
         // also gzip?
         let mut snapshot_size = Information::new::<byte>(
             TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big"),
@@ -215,5 +215,5 @@ impl DataSized for Authenticator {
 
 #[cfg(test)]
 mod tests {
-    // TODO: fix tests
+    // TODO(test): fix tests
 }
