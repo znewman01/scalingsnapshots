@@ -42,11 +42,10 @@ fn hash_package(package: &PackageId) -> Prime {
     hash_to_prime(&encoded).unwrap()
 }
 
-fn convert_package_counts(package_counts: &HashMap<PackageId, Revision>) -> HashMap<Prime, u32> {
+fn convert_package_counts(package_counts: &HashMap<PackageId, u32>) -> HashMap<Prime, u32> {
     let mut hashed_package_counts: HashMap<Prime, u32> = Default::default();
-    for (key, value) in package_counts.iter() {
-        let revision: u32 = u64::from(value.0).try_into().unwrap();
-        hashed_package_counts.insert(hash_package(key), revision);
+    for (key, revision) in package_counts.iter() {
+        hashed_package_counts.insert(hash_package(key), *revision);
     }
     hashed_package_counts
 }
@@ -244,7 +243,7 @@ where
     fn batch_prove(
         &mut self,
         packages: Vec<PackageId>,
-    ) -> (HashMap<PackageId, Revision>, Self::BatchProof) {
+    ) -> (HashMap<PackageId, u32>, Self::BatchProof) {
         let package_keys: HashMap<PackageId, Prime> = packages
             .into_iter()
             .map(|p| {
@@ -254,18 +253,17 @@ where
             .collect();
         let (counts, batch_proof): (HashMap<Prime, u32>, _) =
             self.acc.prove_batch(package_keys.values().cloned());
-        let mut package_revisions: HashMap<PackageId, Revision> = Default::default();
+        let mut package_revisions: HashMap<PackageId, u32> = Default::default();
         for (package, package_key) in package_keys {
             let count: u32 = *counts.get(&package_key).unwrap();
-            let count = NonZeroU64::try_from(u64::from(count)).unwrap();
-            let revision: Revision = count.try_into().unwrap();
-            package_revisions.insert(package, revision);
+            package_revisions.insert(package, count);
         }
         (package_revisions, batch_proof)
     }
+
     fn batch_verify(
         snapshot: &Self::ClientSnapshot,
-        packages: HashMap<PackageId, Revision>,
+        packages: HashMap<PackageId, u32>,
         proof: Self::BatchProof,
     ) -> bool {
         let members = convert_package_counts(&packages);
@@ -336,7 +334,7 @@ pub struct PoolSnapshot<A: BatchAccumulator> {
 
 impl<A: BatchAccumulator> DataSized for PoolSnapshot<A> {
     fn size(&self) -> Information {
-        todo!()
+        uom::ConstZero::ZERO
     }
 }
 
@@ -346,7 +344,7 @@ impl<A: BatchAccumulator> DataSized for PoolSnapshot<A> {
 ))]
 struct CatchUpToEODProof<A: BatchAccumulator> {
     eod_digest: A::Digest,
-    bod_package_counts: HashMap<PackageId, Revision>,
+    bod_package_counts: HashMap<PackageId, u32>,
     bod_package_membership_witness: A::BatchWitness,
     eod_package_membership_witness: A::BatchWitness,
     bod_to_eod: A::AppendOnlyWitness, // TODO: missing? bod->eod append only witness
@@ -461,7 +459,7 @@ where
         for package in self.pool.iter().chain(rest_of_current_day) {
             match package_counts.get_mut(&package) {
                 Some(r) => {
-                    r.increment();
+                    *r += 1;
                 }
                 None => {
                     return Err(()); // missing from current_revisions
@@ -486,22 +484,18 @@ where
         Ok(catch_up_proof.eod_digest.clone())
     }
 
-    fn batch_verify(
-        &self,
-        mut packages: HashMap<PackageId, Revision>,
-        proof: A::BatchWitness,
-    ) -> bool {
+    fn batch_verify(&self, mut packages: HashMap<PackageId, u32>, proof: A::BatchWitness) -> bool {
         // Subtract out the packages that appear in "self.pool" so that we can
         // check "packages" against "self.inner".
         for pool_package in &self.pool {
             if let Some(revision) = packages.get_mut(pool_package) {
-                if revision.0 == NonZeroU64::new(0u64).unwrap() {
+                if *revision == 0 {
                     // The counts in "packages" CANNOT be correct becaus
                     // "pool_package" appears more times in "self.pool" than in
                     // "packages".
                     return false;
                 }
-                revision.decrement().expect(">0");
+                *revision -= 1;
             }
         }
         let members = convert_package_counts(&packages);
@@ -521,9 +515,9 @@ struct Epoch<A: BatchAccumulator> {
     packages: Vec<PackageId>,
     eod_digest: A::Digest,
     // only for the things that got updated this epoch
-    bod_package_counts: HashMap<PackageId, Revision>,
+    bod_package_counts: HashMap<PackageId, u32>,
     // only for the things that got updated this epoch
-    eod_package_counts: HashMap<PackageId, Revision>,
+    eod_package_counts: HashMap<PackageId, u32>,
     bod_package_membership_witness: A::BatchWitness,
     eod_package_membership_witness: A::BatchWitness,
     bod_to_eod: A::AppendOnlyWitness,
@@ -544,6 +538,19 @@ pub struct PoolAuthenticator<A: BatchAccumulator> {
     current_pool: Vec<PackageId>,
 }
 
+#[derive(Derivative, Serialize, Clone)]
+// #[derivative(Clone(bound = "A::Witness: Clone, D::NonMembershipWitness: Clone"))]
+pub enum PoolWitness<A: Accumulator> {
+    Member(A::Witness),
+    Nonmember(A::NonMembershipWitness),
+}
+
+impl<A: Accumulator> DataSized for PoolWitness<A> {
+    fn size(&self) -> Information {
+        Information::new::<byte>(0)
+    }
+}
+
 #[allow(unused_variables)]
 impl<A> super::Authenticator for PoolAuthenticator<A>
 where
@@ -552,15 +559,21 @@ where
     A::Witness: Serialize + Clone + DataSized,
     A::Digest: Default + Clone + Eq + hash::Hash,
     Authenticator<A>: BatchAuthenticator<BatchProof = <A as BatchAccumulator>::BatchWitness>
-        + super::Authenticator<Id = Option<A::Digest>, Diff = Diff<A>, ClientSnapshot = Snapshot<A>>,
+        + super::Authenticator<
+            Id = Option<A::Digest>,
+            Diff = Diff<A>,
+            ClientSnapshot = Snapshot<A>,
+            Proof = A::Witness,
+        >,
     A::BatchWitness: Clone + Serialize,
     A::AppendOnlyWitness: Clone + Default,
+    PoolWitness<A>: Clone + DataSized + Serialize,
     Epoch<A>: Clone,
 {
     type ClientSnapshot = PoolSnapshot<A>;
     type Id = Option<(A::Digest, usize)>;
     type Diff = PoolDiff<A>;
-    type Proof = <Authenticator<A> as super::Authenticator>::Proof;
+    type Proof = PoolWitness<A>;
 
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut inner = Authenticator::<A>::batch_import(packages.clone());
@@ -634,8 +647,11 @@ where
     fn publish(&mut self, package: PackageId) {
         // If package is new, then we need to precompute a nonmembership proof
         // for it against self.inner.
-        self.inner
-            .request_file(Authenticator::<A>::id(&self.inner.get_metadata()), &package);
+        let value = hash_package(&package);
+        // We're precomputing the nonmembership proof *for the side effect* of
+        // adding it to the cache. If value is already in the accumulator, this
+        // does nothing.
+        self.inner.acc.prove_nonmember(&value);
         self.current_pool.push(package);
     }
 
@@ -647,10 +663,33 @@ where
         let (inner_snapshot, pool_size) = snapshot_id.unwrap();
         let _ = pool_size;
         // assert_eq!(pool_size, self.current_pool.size());
-        let (bod_revision, bod_membership_proof) =
-            self.inner.request_file(Some(inner_snapshot), package);
-        let revision = bod_revision + self.current_pool.iter().filter(|p| p == &package).count();
-        (revision, bod_membership_proof)
+        let value = hash_package(&package);
+        let mut revision = self.inner.acc.get(&value);
+        // let (bod_revision, bod_membership_proof) =
+        //     self.inner.request_file(Some(inner_snapshot), package);
+        // let revision = bod_revision + self.current_pool.iter().filter(|p| p == &package).count();
+        // (revision, bod_membership_proof)
+        let proof = if revision > 0 {
+            PoolWitness::Member(
+                self.inner
+                    .acc
+                    .prove(&value, revision)
+                    .expect("proof failed"),
+            )
+        } else {
+            PoolWitness::Nonmember(self.inner.acc.prove_nonmember(&value).unwrap())
+        };
+        let count: u32 = self
+            .current_pool
+            .iter()
+            .filter(|p| p == &package)
+            .count()
+            .try_into()
+            .unwrap();
+        revision += count;
+        let revision: NonZeroU64 = u64::from(revision).try_into().unwrap();
+        let revision = Revision::from(revision);
+        (revision, proof)
     }
 
     fn name() -> &'static str {
@@ -732,7 +771,15 @@ where
         proof: Self::Proof,
     ) -> bool {
         let bod_revision = revision - snapshot.pool.iter().filter(|p| p == &package_id).count();
-        Authenticator::<A>::verify_membership(&snapshot.inner, package_id, bod_revision, proof)
+        match proof {
+            PoolWitness::Member(proof) => Authenticator::<A>::verify_membership(
+                &snapshot.inner,
+                package_id,
+                bod_revision,
+                proof,
+            ),
+            PoolWitness::Nonmember(_) => false,
+        }
     }
 }
 

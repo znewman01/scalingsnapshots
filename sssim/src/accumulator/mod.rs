@@ -26,6 +26,9 @@ pub trait Accumulator {
     fn prove(&mut self, member: &Prime, revision: u32) -> Option<Self::Witness>;
 
     #[must_use]
+    fn prove_nonmember(&mut self, value: &Prime) -> Option<Self::NonMembershipWitness>;
+
+    #[must_use]
     fn get(&self, member: &Prime) -> u32;
 
     fn import(multiset: MultiSet<Prime>) -> Self;

@@ -162,7 +162,6 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
     ) -> Option<Self::AppendOnlyWitness> {
         let old_digest = self.digest.clone();
 
-        // TODO: parallelize but that's tricky
         let mut exponent = Integer::from(1u8);
 
         let mut members_hashmap = HashMap::<Prime, u32>::default();
@@ -188,17 +187,15 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
         // TODO: make n log n
         for (member, count) in &members_hashmap {
             if self.proof_cache.get_mut(member).is_none() {
-                let membership_proof = MembershipWitness(
-                    self.digest.value.clone()
-                        * &(exponent.inner().clone() / member.inner().pow(count).complete()),
-                );
+                let exponent = exponent.inner().clone() / member.inner().pow(count).complete();
+                let membership_proof = MembershipWitness(self.digest.value.clone() * &exponent);
                 let mut nonmember_proof = self
                     .nonmember_proof_cache
                     .remove(member)
                     .unwrap_or_else(|| self.prove_nonmember_uncached(&member).unwrap());
                 nonmember_proof.update(
                     &member,
-                    exponent.clone(),
+                    Prime::new_unchecked(exponent),
                     membership_proof.clone().0.clone(),
                 );
                 let proof = Witness {
@@ -210,6 +207,7 @@ impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<
         }
 
         self.digest.value *= exponent.inner();
+
         for (member, count) in members_hashmap {
             for _ in 0..count {
                 self.multiset.insert(member.clone());
@@ -321,7 +319,7 @@ pub struct RsaAccumulator<G> {
 
 impl<G> DataSized for RsaAccumulator<G> {
     fn size(&self) -> crate::util::Information {
-        todo!()
+        uom::ConstZero::ZERO
     }
 }
 
@@ -547,18 +545,6 @@ impl<G: Group + 'static> RsaAccumulator<G> {
 
         Some(NonMembershipWitness { exp: s, base: d })
     }
-
-    #[must_use]
-    fn prove_nonmember(&mut self, value: &Prime) -> Option<NonMembershipWitness<G>> {
-        if let Some(proof) = self.nonmember_proof_cache.get(value) {
-            return Some(proof.clone());
-        }
-        self.prove_nonmember_uncached(value).map(|proof| {
-            self.nonmember_proof_cache
-                .insert(value.clone(), proof.clone());
-            proof
-        })
-    }
 }
 
 fn find_max_pow(mut index: usize) -> usize {
@@ -687,6 +673,17 @@ impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G> {
             return self.prove_nonmember(member).map(Witness::for_zero);
         }
         self.proof_cache.get(member).cloned()
+    }
+
+    fn prove_nonmember(&mut self, value: &Prime) -> Option<NonMembershipWitness<G>> {
+        if let Some(proof) = self.nonmember_proof_cache.get(value) {
+            return Some(proof.clone());
+        }
+        self.prove_nonmember_uncached(value).map(|proof| {
+            self.nonmember_proof_cache
+                .insert(value.clone(), proof.clone());
+            proof
+        })
     }
 
     fn get(&self, member: &Prime) -> u32 {

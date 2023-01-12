@@ -66,10 +66,23 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              server_state_bytes INTEGER,
              cdn_size_bytes     INTEGER,
              batch_size         INTEGER,
-             merge_time         INTEGER,
              cores              INTEGER,
              dataset            TEXT
          )",
+        [],
+    )?;
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS merge_results (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            technique           TEXT NOT NULL,
+            packages            INTEGER,
+            server_state_bytes  INTEGER,
+            cdn_size_bytes      INTEGER,
+            merge_time          INTEGER,
+            batch_size          INTEGER,
+            cores               INTEGER,
+            dataset             TEXT
+        )",
         [],
     )?;
     db.execute(
@@ -143,7 +156,6 @@ fn insert_update_result(
     server_state: Information,
     cdn_size: Information,
     batch_size: u16,
-    merge_time: u64,
     cores: u16,
     dataset: &Option<String>,
 ) -> rusqlite::Result<usize> {
@@ -159,10 +171,9 @@ fn insert_update_result(
             server_state_bytes,
             cdn_size_bytes,
             batch_size,
-            merge_time,
             cores,
             dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 ) ",
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -170,7 +181,45 @@ fn insert_update_result(
             server_state_bytes,
             cdn_size_bytes,
             batch_size,
+            cores,
+            dataset
+        ],
+    )
+}
+
+fn insert_merge_result(
+    db: &Connection,
+    technique: &str,
+    packages: usize,
+    server_state: Information,
+    cdn_size: Information,
+    merge_time: Duration,
+    batch_size: u16,
+    cores: u16,
+    dataset: &Option<String>,
+) -> rusqlite::Result<usize> {
+    let merge_time_ns: u64 = merge_time.whole_nanoseconds().try_into().unwrap();
+    let server_state_bytes = server_state.get::<byte>();
+    let cdn_size_bytes = cdn_size.get::<byte>(); //
+    db.execute(
+        "
+        INSERT INTO update_results (
+            technique,
+            packages,
+            server_state_bytes,
             merge_time,
+            cdn_size_bytes,
+            batch_size,
+            cores,
+            dataset
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ",
+        rusqlite::params![
+            technique,
+            packages,
+            server_state_bytes,
+            merge_time_ns,
+            cdn_size_bytes,
+            batch_size,
             cores,
             dataset
         ],
@@ -224,32 +273,40 @@ fn batch_update_trials<A>(
 where
     A: PoolAuthenticator + Clone + Debug + DataSized,
 {
-    for i in 0..num_trials {
+    for _ in 0..num_trials {
         let cores = 1;
         let mut auth = auth.clone();
-        let package_id = PackageId::from("new_package".to_string());
-        let (update_time, _) = Duration::time_fn(|| {
-            auth.publish(package_id);
-        });
-
-        let mut merge_time = Duration::ZERO;
-        if i % batch_size == 0 {
-            (merge_time, _) = Duration::time_fn(|| {
-                auth.batch_process();
+        for b in 0..batch_size {
+            let package_id = PackageId::from("new_package".to_string());
+            let (update_time, _) = Duration::time_fn(|| {
+                auth.publish(package_id);
             });
+            let cdn_size = Information::new::<byte>(0); // TODO: CDN size
+            insert_update_result(
+                db,
+                A::name(),
+                num_packages,
+                update_time,
+                auth.size(),
+                cdn_size,
+                b + 1,
+                cores,
+                dataset,
+            )?;
         }
 
+        let (merge_time, _) = Duration::time_fn(|| {
+            auth.batch_process();
+        });
         let cdn_size = Information::new::<byte>(0); // TODO: CDN size
-                                                    //TODO: write this function that includes merge_time
-        insert_update_result(
+        insert_merge_result(
             db,
             A::name(),
             num_packages,
-            update_time,
             auth.size(),
             cdn_size,
+            merge_time,
             batch_size,
-            merge_time.whole_nanoseconds().try_into().unwrap(),
             cores,
             dataset,
         )?;
@@ -268,7 +325,6 @@ where
     A: Authenticator + Clone + Debug,
 {
     for _ in 0..num_trials {
-        // TODO: batches: 0/batch_size
         let batch_size = 1;
         let cores = 1;
         let mut auth = auth.clone();
@@ -286,7 +342,6 @@ where
             auth.size(),
             cdn_size,
             batch_size,
-            Duration::ZERO.whole_nanoseconds().try_into().unwrap(),
             cores,
             dataset,
         )?;
@@ -398,10 +453,6 @@ fn refresh_user_state<A: Authenticator + Clone>(
                 break;
             }
         }
-        // TODO: for RSA
-        // - how fast in the same day? batch_size=1million
-        // - how about N days? batch_size=1
-        // - can use many cores
         let package = PackageId::from(format!("new_package{}", idx));
         auth.publish(package);
     }
@@ -550,6 +601,7 @@ fn main() -> io::Result<()> {
             "mercury_hash_diff",
             "merkle",
             "rsa",
+            "rsa_pool",
             "vanilla_tuf",
         ]
         .into_iter()

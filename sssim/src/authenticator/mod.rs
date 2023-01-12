@@ -152,11 +152,11 @@ pub trait BatchAuthenticator: Authenticator {
     fn batch_prove(
         &mut self,
         packages: Vec<PackageId>,
-    ) -> (HashMap<PackageId, Revision>, Self::BatchProof);
+    ) -> (HashMap<PackageId, u32>, Self::BatchProof);
 
     fn batch_verify(
         snapshot: &Self::ClientSnapshot,
-        packages: HashMap<PackageId, Revision>,
+        packages: HashMap<PackageId, u32>,
         proof: Self::BatchProof,
     ) -> bool;
 }
