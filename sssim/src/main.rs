@@ -281,7 +281,7 @@ where
             let (update_time, _) = Duration::time_fn(|| {
                 auth.publish(package_id);
             });
-            let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
+            let cdn_size = auth.cdn_size();
             insert_update_result(
                 db,
                 A::name(),
@@ -298,7 +298,7 @@ where
         let (merge_time, _) = Duration::time_fn(|| {
             auth.batch_process();
         });
-        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
+        let cdn_size = auth.cdn_size();
         insert_merge_result(
             db,
             A::name(),
@@ -333,7 +333,7 @@ where
             auth.publish(package_id);
         });
 
-        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
+        let cdn_size = auth.cdn_size();
         insert_update_result(
             db,
             A::name(),
@@ -365,7 +365,7 @@ where
         // TODO(must): hook for progress reporting in batch_import?
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
-        let cdn_size = Information::new::<byte>(0); // TODO(must): CDN size
+        let cdn_size = inner_auth.cdn_size();
         let cores = 1;
         insert_precompute_result(
             db,

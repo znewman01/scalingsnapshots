@@ -7,7 +7,7 @@ use crate::{
     hash_to_prime::hash_to_prime,
     multiset::MultiSet,
     primitives::Prime,
-    util::{byte, DataSized, Information},
+    util::{byte, DataSized, Information, STRING_BYTES},
 };
 
 use authenticator::Revision;
@@ -216,6 +216,10 @@ where
             None => false,
             Some(d) => A::verify(&d, &prime, revision.0.get().try_into().unwrap(), proof),
         }
+    }
+
+    fn cdn_size(&self) -> Information {
+        self.acc.cdn_size()
     }
 }
 
@@ -780,6 +784,11 @@ where
             ),
             PoolWitness::Nonmember(_) => false,
         }
+    }
+
+    fn cdn_size(&self) -> Information {
+        self.inner.cdn_size()
+            + Information::new::<byte>((self.current_pool.len() * STRING_BYTES).try_into().unwrap())
     }
 }
 

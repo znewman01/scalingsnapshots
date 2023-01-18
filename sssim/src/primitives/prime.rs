@@ -6,6 +6,9 @@ use thiserror::Error;
 
 use super::{NonNegative, NonZero};
 
+use crate::util::DataSized;
+use crate::util::Information;
+
 // How sure do we want to be that our primes are actually prime?
 // We want to be 30 sure.
 const MILLER_RABIN_ITERS: u32 = 30;
@@ -46,6 +49,12 @@ impl TryFrom<Integer> for Prime {
             return Err(CompositeError { value });
         }
         Ok(Prime { value })
+    }
+}
+
+impl DataSized for Prime {
+    fn size(&self) -> Information {
+        self.value.size()
     }
 }
 

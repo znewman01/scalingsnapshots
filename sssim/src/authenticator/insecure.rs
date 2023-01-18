@@ -3,7 +3,10 @@ use serde::Serialize;
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
+use crate::{
+    authenticator::Revision, log::PackageId, util::byte, util::DataSizeFromSerialize,
+    util::Information,
+};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -63,6 +66,10 @@ impl super::Authenticator for Authenticator {
         _: Self::Proof,
     ) -> bool {
         true
+    }
+
+    fn cdn_size(&self) -> Information {
+        Information::new::<byte>(0)
     }
 }
 

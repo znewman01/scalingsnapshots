@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::util::DataSized;
+
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
@@ -9,6 +11,7 @@ use crate::{
     authenticator::{Hash, Revision},
     log::PackageId,
     util::DataSizeFromSerialize,
+    util::Information,
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
@@ -154,6 +157,16 @@ impl super::Authenticator for Authenticator {
         } else {
             false
         }
+    }
+
+    fn cdn_size(&self) -> Information {
+        let mut size = self.snapshot.size();
+
+        for (key, value) in &self.snapshots {
+            size += key.size();
+            size += value.size();
+        }
+        size
     }
 }
 

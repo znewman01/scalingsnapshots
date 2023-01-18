@@ -10,6 +10,8 @@ use crate::primitives::{Group, Prime};
 use rug::Integer;
 use serde::Serialize;
 
+use crate::util::{DataSized, Information};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instance<G> {
     // new value
@@ -28,6 +30,15 @@ pub struct Proof<G> {
     z: G,
     Q: G,
     r: Integer,
+}
+
+impl<G> DataSized for Proof<G>
+where
+    G: DataSized,
+{
+    fn size(&self) -> Information {
+        self.z.size() + self.Q.size() + self.r.size()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

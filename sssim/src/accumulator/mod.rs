@@ -7,7 +7,7 @@ pub mod rsa;
 
 pub use rsa::{RsaAccumulator, RsaAccumulatorDigest};
 
-use crate::{multiset::MultiSet, primitives::Prime};
+use crate::{multiset::MultiSet, primitives::Prime, util::Information};
 
 pub trait Accumulator {
     type Digest: Clone + Debug;
@@ -43,6 +43,8 @@ pub trait Accumulator {
         proof: &Self::AppendOnlyWitness,
         new_state: &Self::Digest,
     ) -> bool;
+
+    fn cdn_size(&self) -> Information;
 }
 
 pub trait BatchAccumulator: Accumulator {

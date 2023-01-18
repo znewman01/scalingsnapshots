@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+use crate::util::DataSized;
 use serde::Serialize;
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
+use crate::{
+    authenticator::Revision, log::PackageId, util::DataSizeFromSerialize, util::Information,
+};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -118,6 +121,10 @@ impl super::Authenticator for Authenticator {
         _: Self::Proof,
     ) -> bool {
         matches!(snapshot.package_revisions.get(package_id), Some(r) if r == &revision)
+    }
+
+    fn cdn_size(&self) -> Information {
+        self.log.size()
     }
 }
 

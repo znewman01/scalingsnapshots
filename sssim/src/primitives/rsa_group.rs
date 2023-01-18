@@ -1,4 +1,5 @@
 use super::{AdaptiveRootAssumption, Group};
+use crate::util::{DataSized, Information};
 use once_cell::sync::Lazy;
 use rug::Integer;
 use serde::Serialize;
@@ -33,6 +34,12 @@ impl Rsa2048Group {
     /// Check that this is a valid group element.
     fn check_value(&self) -> bool {
         0u8 < self.value && &self.value <= MODULUS.deref()
+    }
+}
+
+impl DataSized for Rsa2048Group {
+    fn size(&self) -> Information {
+        self.value.size()
     }
 }
 

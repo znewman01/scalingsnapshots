@@ -14,7 +14,7 @@ use std::{
 
 use serde::Serialize;
 
-use crate::{accumulator::rsa::RsaAccumulator, util::DataSizeFromSerialize};
+use crate::{accumulator::rsa::RsaAccumulator, util::DataSizeFromSerialize, util::Information};
 
 use crate::primitives::RsaGroup;
 pub use hackage::Authenticator as Hackage;
@@ -144,6 +144,8 @@ pub trait Authenticator: DataSized {
         revision: Revision,
         proof: Self::Proof,
     ) -> bool;
+
+    fn cdn_size(&self) -> Information;
 }
 
 pub trait BatchAuthenticator: Authenticator {
@@ -166,7 +168,7 @@ pub trait PoolAuthenticator: Authenticator {
 }
 
 #[cfg(test)]
-pub(in crate) mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub fn update<S, A>(mut client_state: S, server_state: &A) -> Result<(), TestCaseError>

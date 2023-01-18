@@ -10,7 +10,11 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 
 use serde::Serialize;
 
-use crate::{authenticator::Revision, log::PackageId, util::DataSizeFromSerialize};
+use crate::util::DataSized;
+
+use crate::{
+    authenticator::Revision, log::PackageId, util::DataSizeFromSerialize, util::Information,
+};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
@@ -121,6 +125,15 @@ impl super::Authenticator for Authenticator {
         } else {
             false
         }
+    }
+
+    fn cdn_size(&self) -> Information {
+        let mut size = self.snapshot.id.size();
+        for (key, value) in &self.snapshot.packages {
+            size += key.size();
+            size += value.size();
+        }
+        size
     }
 }
 

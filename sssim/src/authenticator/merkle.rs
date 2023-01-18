@@ -13,7 +13,8 @@ use uom::ConstZero;
 
 use authenticator::Revision;
 
-use crate::util::DataSizeFromSerialize;
+use crate::util::{DataSizeFromSerialize, STRING_BYTES};
+
 use crate::{authenticator, log::PackageId, util::DataSized};
 
 static TREE_HEIGHT: usize = 256;
@@ -63,7 +64,6 @@ fn hash(data: &[u8]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-/// An authenticator as-in vanilla TUF.
 #[derive(Debug)]
 pub struct Authenticator {
     tree: SparseMerkleTree<Node>,
@@ -178,6 +178,19 @@ impl super::Authenticator for Authenticator {
             return false;
         }
         true
+    }
+
+    fn cdn_size(&self) -> Information {
+        let leaf_size = 16 + 8 + STRING_BYTES + 3 * 8;
+        let internal_size = 16 + 3 * 8;
+        let num_leaves = self.tree.get_leaves().len();
+
+        // assume worst case: all internal nodes, no padding
+        Information::new::<byte>(
+            (num_leaves * leaf_size + self.tree.get_nodes_num() * internal_size)
+                .try_into()
+                .unwrap(),
+        )
     }
 }
 

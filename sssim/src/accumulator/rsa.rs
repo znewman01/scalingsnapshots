@@ -3,7 +3,7 @@ use crate::accumulator::{Accumulator, BatchAccumulator};
 use crate::poke;
 use crate::primitives::{Group, PositiveInteger, Prime};
 use crate::util::DataSized;
-use crate::{multiset::MultiSet, util::DataSizeFromSerialize};
+use crate::{multiset::MultiSet, util::DataSizeFromSerialize, util::Information};
 use rayon::prelude::*;
 use rug::Complete;
 use rug::{ops::Pow, Integer};
@@ -40,6 +40,15 @@ impl<G: Group> MembershipWitness<G> {
 pub struct NonMembershipWitness<G> {
     exp: Integer,
     base: G,
+}
+
+impl<G> DataSized for NonMembershipWitness<G>
+where
+    G: DataSized,
+{
+    fn size(&self) -> Information {
+        self.exp.size() + self.base.size()
+    }
 }
 
 impl<G: Group + 'static> NonMembershipWitness<G> {
@@ -136,7 +145,11 @@ impl<G> DataSized for AppendOnlyWitness<G> {
 
 impl<G> DataSizeFromSerialize for HashMap<Prime, Witness<G>> where G: Serialize {}
 
-impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<G> {
+impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<G>
+where
+    RsaAccumulator<G>: Accumulator<Digest = RsaAccumulatorDigest<G>>,
+    HashMap<Prime, <Self as Accumulator>::Witness>: Clone,
+{
     type BatchDigest = RsaAccumulatorDigest<G>;
     type BatchWitness = HashMap<Prime, <Self as Accumulator>::Witness>;
 
@@ -301,6 +314,19 @@ impl<G: Group> SkipListEntry<G> {
         }
         // not found
         panic!("offset too big")
+    }
+}
+
+impl<G> DataSized for SkipListEntry<G>
+where
+    poke::Proof<G>: DataSized,
+{
+    fn size(&self) -> Information {
+        let mut size = uom::ConstZero::ZERO;
+        for p in &self.proofs {
+            size += p.size();
+        }
+        size
     }
 }
 
@@ -556,7 +582,11 @@ fn find_max_pow(mut index: usize) -> usize {
     max_pow
 }
 
-impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G> {
+impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G>
+where
+    NonMembershipWitness<G>: DataSized,
+    SkipListEntry<G>: DataSized,
+{
     type Digest = RsaAccumulatorDigest<G>;
     type Witness = Witness<G>;
     type AppendOnlyWitness = AppendOnlyWitness<G>;
@@ -766,6 +796,28 @@ impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G> {
             cur = value.clone();
         }
         cur == new_state.value
+    }
+
+    fn cdn_size(&self) -> Information {
+        let mut size = uom::ConstZero::ZERO;
+        for (key, value) in &self.nonmember_proof_cache {
+            size += key.size();
+            size += value.size();
+        }
+        for (key, value) in &self.proof_cache {
+            size += key.size();
+            size += value.size();
+        }
+
+        for i in &self.append_only_proofs {
+            size += i.size();
+        }
+
+        for j in &self.digest_history {
+            size += j.size();
+        }
+
+        size
     }
 }
 
