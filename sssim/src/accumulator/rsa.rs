@@ -10,14 +10,20 @@ use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+
+use indicatif::ProgressBar;
+
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct RsaAccumulatorDigest<G> {
     value: G,
 }
 
-impl<G> DataSized for RsaAccumulatorDigest<G> {
+impl<G> DataSized for RsaAccumulatorDigest<G>
+where
+    G: DataSized,
+{
     fn size(&self) -> crate::util::Information {
-        todo!()
+        self.value.size()
     }
 }
 
@@ -357,6 +363,7 @@ fn precompute_helper<G: Group + 'static>(
     counts: &[u32],
     proof: NonMembershipWitness<G>,
     g: G,
+    bar: &ProgressBar,
 ) -> (Vec<Witness<G>>, G, Integer) {
     debug_assert_eq!(values.len(), counts.len());
     if values.len() == 0 {
@@ -468,6 +475,9 @@ fn precompute_helper<G: Group + 'static>(
         (&values[..split_idx]).len() + (&values[split_idx..]).len(),
         values.len()
     );
+
+    bar.inc(values.len().try_into().unwrap());
+
     let (mut ret, r_ret) = if values.len() >= PRECOMPUTE_CHUNK_SIZE {
         rayon::join(
             || {
@@ -476,6 +486,7 @@ fn precompute_helper<G: Group + 'static>(
                     &counts[..split_idx],
                     proof_left,
                     g_right,
+                    bar,
                 )
                 .0
             },
@@ -485,6 +496,7 @@ fn precompute_helper<G: Group + 'static>(
                     &counts[split_idx..],
                     proof_right,
                     g_left,
+                    bar,
                 )
                 .0
             },
@@ -496,6 +508,7 @@ fn precompute_helper<G: Group + 'static>(
                 &counts[..split_idx],
                 proof_left,
                 g_right,
+                bar,
             )
             .0,
             precompute_helper(
@@ -503,6 +516,7 @@ fn precompute_helper<G: Group + 'static>(
                 &counts[split_idx..],
                 proof_right,
                 g_left,
+                bar,
             )
             .0,
         )
@@ -527,7 +541,13 @@ fn precompute<G: Group + 'static>(
     let base = G::default() * &b;
     let proof = NonMembershipWitness { exp: a, base };
 
-    precompute_helper(values, counts, proof, G::default())
+    let height: usize = values.len().ilog2().try_into().unwrap();
+    let bar = ProgressBar::new((values.len() * height).try_into().unwrap());
+
+    let ret = precompute_helper(values, counts, proof, G::default(), &bar);
+    bar.finish();
+
+    ret
 }
 
 impl<G: Group + 'static> RsaAccumulator<G> {
@@ -586,6 +606,7 @@ impl<G: Group + TryFrom<Integer> + 'static> Accumulator for RsaAccumulator<G>
 where
     NonMembershipWitness<G>: DataSized,
     SkipListEntry<G>: DataSized,
+    RsaAccumulatorDigest<G>: DataSized,
 {
     type Digest = RsaAccumulatorDigest<G>;
     type Witness = Witness<G>;

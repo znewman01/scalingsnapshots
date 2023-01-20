@@ -17,6 +17,8 @@ use sssim::simulator::ResourceUsage;
 use sssim::util::{DataSized, Information};
 use sssim::{authenticator, PoolAuthenticator};
 
+use indicatif::ProgressBar;
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
@@ -362,7 +364,7 @@ where
 {
     let mut auth = None;
     for _ in 0..num_trials {
-        // TODO(must): hook for progress reporting in batch_import?
+        // TODO(maybe): more hooks for progress reporting in batch_import
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
         let cdn_size = inner_auth.cdn_size();

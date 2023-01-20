@@ -64,7 +64,7 @@ fn hash(data: &[u8]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Authenticator {
     tree: SparseMerkleTree<Node>,
     revisions: HashMap<PackageId, Revision>,
@@ -191,13 +191,6 @@ impl super::Authenticator for Authenticator {
                 .try_into()
                 .unwrap(),
         )
-    }
-}
-
-impl Clone for Authenticator {
-    fn clone(&self) -> Self {
-        let packages = self.revisions.keys().cloned().collect();
-        <Self as super::Authenticator>::batch_import(packages)
     }
 }
 
