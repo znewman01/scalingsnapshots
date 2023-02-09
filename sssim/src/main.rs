@@ -98,6 +98,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
          )",
         [],
     )?;
+    // TODO(must): actually measure user_time
     db.execute(
         "CREATE TABLE IF NOT EXISTS refresh_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,7 +206,7 @@ fn insert_merge_result(
     let cdn_size_bytes = cdn_size.get::<byte>(); //
     db.execute(
         "
-        INSERT INTO update_results (
+        INSERT INTO merge_results (
             technique,
             packages,
             server_state_bytes,
@@ -275,7 +276,9 @@ fn batch_update_trials<A>(
 where
     A: PoolAuthenticator + Clone + Debug + DataSized,
 {
-    for _ in 0..num_trials {
+    println!("{num_trials} publish trials");
+    for i in 0..num_trials {
+        println!("trial {i}");
         let cores = 1;
         let mut auth = auth.clone();
         for b in 0..batch_size {
@@ -326,7 +329,9 @@ fn update_trials<A>(
 where
     A: Authenticator + Clone + Debug,
 {
-    for _ in 0..num_trials {
+    println!("{num_trials} trials");
+    for i in 0..num_trials {
+        println!("trial {i}");
         let batch_size = 1;
         let cores = 1;
         let mut auth = auth.clone();
@@ -363,7 +368,9 @@ where
     A: Authenticator + Debug,
 {
     let mut auth = None;
-    for _ in 0..num_trials {
+    println!("{num_trials} trials");
+    for i in 0..num_trials {
+        println!("trial number: {i}");
         // TODO(maybe): more hooks for progress reporting in batch_import
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
@@ -394,7 +401,9 @@ fn create_user_state<A: Authenticator>(
     db: &Connection,
 ) -> rusqlite::Result<A::ClientSnapshot> {
     let mut user_state_initial: Option<A::ClientSnapshot> = None;
-    for _ in 0..num_trials {
+    println!("{num_trials} trials");
+    for i in 0..num_trials {
+        println!("trial {i}");
         let user_state = auth.get_metadata();
         insert_refresh_result(
             db,
@@ -473,7 +482,9 @@ where
     A: Authenticator + Clone + Debug,
 {
     let mut rng = rand::thread_rng();
-    for _ in 1..download_trials {
+    println!("{download_trials} trials");
+    for i in 1..download_trials {
+        println!("trial {i}");
         let mut auth = auth.clone();
         let user_state = auth.get_metadata();
         let package = rand::seq::SliceRandom::choose(packages.as_slice(), &mut rng).unwrap();
@@ -528,10 +539,13 @@ where
 
     let num_packages = packages.len();
 
+    println!("precompute");
     let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
 
+    println!("update");
     update_trials(UPDATE_TRIALS, &auth, dataset, num_packages, db)?;
 
+    println!("refresh");
     let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
 
     refresh_user_state(
@@ -543,6 +557,7 @@ where
         user_state_initial,
     )?;
 
+    println!("download");
     download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
 
     Ok(())
@@ -552,6 +567,7 @@ fn run_batch<A>(
     dataset: &Option<String>,
     packages: Vec<PackageId>,
     db: &Connection,
+    batch_sizes: Vec<u16>,
 ) -> rusqlite::Result<()>
 where
     A: PoolAuthenticator + Clone + Debug,
@@ -562,13 +578,16 @@ where
     static DOWNLOAD_TRIALS: u16 = 3;
 
     let num_packages = packages.len();
-    //TODO(must): don't hard code
-    let batch_size: u16 = 5;
 
+    println!("precompute");
     let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
 
-    batch_update_trials(UPDATE_TRIALS, &auth, batch_size, dataset, num_packages, db)?;
+    for batch_size in batch_sizes {
+        print!("batch_size: {batch_size}\n");
+        batch_update_trials(UPDATE_TRIALS, &auth, batch_size, dataset, num_packages, db)?;
+    }
 
+    println!("refresh");
     let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
 
     refresh_user_state(
@@ -580,6 +599,7 @@ where
         user_state_initial,
     )?;
 
+    println!("download");
     download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
 
     Ok(())
@@ -618,7 +638,7 @@ fn main() -> io::Result<()> {
     let db = Connection::open(&args.results).expect("creating SQLite db");
     create_tables(&db).unwrap();
     for authenticator in authenticators.into_iter() {
-        println!("authenticator: {}", authenticator);
+        println!("\nauthenticator: {}", authenticator);
 
         let packages = packages.clone();
         let dataset = &args.dataset;
@@ -630,7 +650,10 @@ fn main() -> io::Result<()> {
             "mercury_hash_diff" => run::<authenticator::MercuryHashDiff>(dataset, packages, &db),
             "merkle" => run::<authenticator::Merkle>(dataset, packages, &db),
             "rsa" => run::<authenticator::Rsa>(dataset, packages, &db),
-            "rsa_pool" => run_batch::<authenticator::RsaPool>(dataset, packages, &db),
+            // TODO(must): try with different batch sizes
+            "rsa_pool" => {
+                run_batch::<authenticator::RsaPool>(dataset, packages, &db, vec![1, 5, 10, 15, 20])
+            }
             "vanilla_tuf" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
             _ => panic!("not valid"),
         }

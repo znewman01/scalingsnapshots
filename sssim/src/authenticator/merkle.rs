@@ -1,5 +1,4 @@
 use serde::{Serialize, Serializer};
-//TODO: add hash
 use smtree::index::TreeIndex;
 use smtree::node_template::HashNodeSmt;
 use smtree::pad_secret::ALL_ZEROS_SECRET;
@@ -196,8 +195,6 @@ impl super::Authenticator for Authenticator {
 
 impl DataSized for Authenticator {
     fn size(&self) -> Information {
-        // TODO(maybe): better to serialize then figure out the size?
-        // also gzip?
         let mut snapshot_size = Information::new::<byte>(
             TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big"),
         );

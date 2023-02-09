@@ -351,7 +351,7 @@ struct CatchUpToEODProof<A: BatchAccumulator> {
     bod_package_counts: HashMap<PackageId, u32>,
     bod_package_membership_witness: A::BatchWitness,
     eod_package_membership_witness: A::BatchWitness,
-    bod_to_eod: A::AppendOnlyWitness, // TODO(maybe): missing? bod->eod append only witness
+    bod_to_eod: A::AppendOnlyWitness,
 }
 
 impl<A: BatchAccumulator> CatchUpToEODProof<A>

@@ -62,7 +62,6 @@ pub struct Package {
     pub length: Option<u64>,
 }
 
-// TODO: new action for "last time we see a client" lets us reclaim RAM
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
     Download { user: UserId, package: Package },
