@@ -143,9 +143,37 @@ pub struct AppendOnlyWitness<G> {
     values: Vec<G>,
 }
 
-impl<G> DataSized for AppendOnlyWitness<G> {
+impl<G> DataSized for AppendOnlyWitness<G>
+where
+    G: DataSized,
+    poke::Proof<G>: DataSized,
+{
     fn size(&self) -> crate::util::Information {
-        todo!()
+        let mut size = uom::ConstZero::ZERO;
+        if self.values.len() > 0 {
+            size += u64::try_from(self.values.len()).unwrap() * self.values[0].size();
+        }
+        if self.pokes.len() > 0 {
+            size += u64::try_from(self.pokes.len()).unwrap() * self.pokes[0].size();
+        }
+        return size;
+    }
+}
+
+#[derive(Clone, Serialize, Debug)]
+pub struct BatchWitness<W> {
+    inner: HashMap<Prime, W>,
+}
+
+impl<W: DataSized> DataSized for BatchWitness<W> {
+    fn size(&self) -> Information {
+        if self.inner.len() > 0 {
+            let key = self.inner.keys().next().expect("hashmap not empty");
+            let value = self.inner.get(key).expect("hashmap not empty");
+            let len: u64 = self.inner.len().try_into().unwrap();
+            return len * (key.size() + value.size());
+        }
+        return uom::ConstZero::ZERO;
     }
 }
 
@@ -154,10 +182,10 @@ impl<G> DataSizeFromSerialize for HashMap<Prime, Witness<G>> where G: Serialize 
 impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<G>
 where
     RsaAccumulator<G>: Accumulator<Digest = RsaAccumulatorDigest<G>>,
-    HashMap<Prime, <Self as Accumulator>::Witness>: Clone,
+    BatchWitness<<Self as Accumulator>::Witness>: Clone,
 {
     type BatchDigest = RsaAccumulatorDigest<G>;
-    type BatchWitness = HashMap<Prime, <Self as Accumulator>::Witness>;
+    type BatchWitness = BatchWitness<Self::Witness>;
 
     fn prove_batch<I: IntoIterator<Item = Prime>>(
         &mut self,
@@ -172,7 +200,7 @@ where
             counts.insert(member.clone(), revision);
             proofs.insert(member, proof);
         }
-        (counts, proofs)
+        (counts, BatchWitness { inner: proofs })
     }
 
     fn increment_batch<I: IntoIterator<Item = Prime>>(
@@ -226,6 +254,7 @@ where
         }
 
         self.digest.value *= exponent.inner();
+        self.exponent *= exponent.inner();
 
         for (member, count) in members_hashmap {
             for _ in 0..count {
@@ -276,6 +305,7 @@ where
 
         // Invalidate the nonmembership proof cache.
         self.nonmember_proof_cache = Default::default();
+        debug_assert_eq!(self.digest.value, G::one().clone() * &self.exponent);
 
         Some(self.prove_append_only(&old_digest))
     }
@@ -287,7 +317,7 @@ where
     ) -> bool {
         // TODO(maybe): do better using BBF19?
         for (member, revision) in members {
-            let proof = match witness.remove(member) {
+            let proof = match witness.inner.remove(member) {
                 Some(proof) => proof,
                 None => {
                     return false; // missing proof
@@ -581,6 +611,8 @@ impl<G: Group + 'static> RsaAccumulator<G> {
         }
         debug_assert!(&s < value.inner()); // s should be small-ish
 
+        debug_assert_eq!(self.digest.value, G::one().clone() * &self.exponent);
+
         let d = G::default() * &t;
 
         debug_assert_eq!(
@@ -647,6 +679,8 @@ where
 
         // Update the digest to add the member.
         self.digest.value *= member.borrow();
+        let x: Integer = member.clone().into();
+        self.exponent *= x;
         self.multiset.insert(member.clone());
 
         self.increment_history.push(member.clone());
@@ -689,6 +723,7 @@ where
         self.digests_to_indexes
             .insert(self.digest.clone(), self.digest_history.len() - 1);
 
+        debug_assert_eq!(self.digest.value, G::one().clone() * &self.exponent);
         // Invalidate the nonmembership proof cache.
         self.nonmember_proof_cache = Default::default();
     }
@@ -761,6 +796,7 @@ where
         let digest = RsaAccumulatorDigest::from(digest);
         let mut digests_to_indexes: HashMap<RsaAccumulatorDigest<G>, usize> = Default::default();
         digests_to_indexes.insert(digest.clone(), 0);
+        debug_assert_eq!(digest.value, G::one().clone() * &exponent);
         Self {
             digest: digest.clone(),
             multiset,

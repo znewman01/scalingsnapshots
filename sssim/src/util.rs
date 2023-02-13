@@ -38,6 +38,15 @@ impl DataSized for rug::Integer {
 
 impl DataSized for u64 {
     fn size(&self) -> Information {
-        Information::new::<byte>(*self)
+        Information::new::<byte>(8)
+    }
+}
+
+impl<T: DataSized> DataSized for Option<T> {
+    fn size(&self) -> Information {
+        match self {
+            Some(t) => t.size(),
+            None => uom::ConstZero::ZERO,
+        }
     }
 }

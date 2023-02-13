@@ -47,6 +47,16 @@ struct Event {
 
 fn create_tables(db: &Connection) -> rusqlite::Result<()> {
     db.execute(
+        "CREATE TABLE IF NOT EXISTS overall_time (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            runtime_ns INTEGER,
+            technique  TEXT NOT NULL,
+            packages  INTEGER
+        )",
+        [],
+    )?;
+    // TODO(must): rsa server_state_bytes
+    db.execute(
         "CREATE TABLE IF NOT EXISTS precompute_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
              technique          TEXT NOT NULL,
@@ -59,6 +69,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         )",
         [],
     )?;
+    // TODO(must): rsa server_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS update_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +84,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
          )",
         [],
     )?;
+    // TODO(must): server_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS merge_results (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +99,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         )",
         [],
     )?;
+    // TODO(must): rsa_pool bandwidth_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS download_results (
              id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,7 +111,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
          )",
         [],
     )?;
-    // TODO(must): actually measure user_time
+    // TODO(must): actually measure rsa user_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS refresh_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +126,24 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         [],
     )?;
     Ok(())
+}
+
+fn insert_overall_time(
+    db: &Connection,
+    runtime: Duration,
+    technique: &str,
+    packages: usize,
+) -> rusqlite::Result<usize> {
+    let runtime_ns: u64 = runtime.whole_nanoseconds().try_into().unwrap();
+    db.execute(
+        "
+        INSERT INTO overall_time (
+            runtime_ns,
+            technique,
+            packages
+        ) VALUES (?1, ?2, ?3) ",
+        rusqlite::params![runtime_ns, technique, packages],
+    )
 }
 
 fn insert_precompute_result(
@@ -279,6 +310,7 @@ where
     println!("{num_trials} publish trials");
     for i in 0..num_trials {
         println!("trial {i}");
+        // TODO(must): don't hard code cores
         let cores = 1;
         let mut auth = auth.clone();
         for b in 0..batch_size {
@@ -333,6 +365,7 @@ where
     for i in 0..num_trials {
         println!("trial {i}");
         let batch_size = 1;
+        // TODO(must): don't hard code cores
         let cores = 1;
         let mut auth = auth.clone();
         let package_id = PackageId::from("new_package".to_string());
@@ -375,6 +408,7 @@ where
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
         let cdn_size = inner_auth.cdn_size();
+        // TODO(must): don't hard code cores
         let cores = 1;
         insert_precompute_result(
             db,
@@ -429,11 +463,18 @@ fn refresh_user_state<A: Authenticator + Clone>(
     db: &Connection,
     user_state_initial: A::ClientSnapshot,
 ) -> rusqlite::Result<()> {
-    let mut elapsed_releases = VecDeque::from(vec![0, 1, 10]); // assume sorted
-    let max_entry = elapsed_releases[elapsed_releases.len() - 1];
+    println!("refresh_user_state");
+    let mut elapsed_releases = VecDeque::from(vec![1, 10, 100, 1000, 10000, 100000]); // assume sorted
+    let max_entry: usize = elapsed_releases[elapsed_releases.len() - 1];
+    let bar = ProgressBar::new(max_entry.try_into().unwrap());
+    let mut auth = auth_ref.clone();
     for idx in 0..=max_entry {
-        let mut auth = auth_ref.clone();
+        bar.inc(1);
+        if idx > num_packages {
+            break;
+        }
         if idx == elapsed_releases[0] {
+            println!("On {idx} releases");
             for _ in 0..refresh_trials {
                 let mut user_state = user_state_initial.clone();
                 let maybe_diff = auth.refresh_metadata(A::id(&user_state));
@@ -467,6 +508,7 @@ fn refresh_user_state<A: Authenticator + Clone>(
         let package = PackageId::from(format!("new_package{}", idx));
         auth.publish(package);
     }
+    bar.finish();
     Ok(())
 }
 
@@ -641,23 +683,32 @@ fn main() -> io::Result<()> {
         println!("\nauthenticator: {}", authenticator);
 
         let packages = packages.clone();
+        let package_len = packages.len();
         let dataset = &args.dataset;
-        match authenticator.as_str() {
-            "insecure" => run::<authenticator::Insecure>(dataset, packages, &db),
-            "hackage" => run::<authenticator::Hackage>(dataset, packages, &db),
-            "mercury_diff" => run::<authenticator::MercuryDiff>(dataset, packages, &db),
-            "mercury_hash" => run::<authenticator::MercuryHash>(dataset, packages, &db),
-            "mercury_hash_diff" => run::<authenticator::MercuryHashDiff>(dataset, packages, &db),
-            "merkle" => run::<authenticator::Merkle>(dataset, packages, &db),
-            "rsa" => run::<authenticator::Rsa>(dataset, packages, &db),
-            // TODO(must): try with different batch sizes
-            "rsa_pool" => {
-                run_batch::<authenticator::RsaPool>(dataset, packages, &db, vec![1, 5, 10, 15, 20])
+        let (runtime, _) = Duration::time_fn(|| {
+            match authenticator.as_str() {
+                "insecure" => run::<authenticator::Insecure>(dataset, packages, &db),
+                "hackage" => run::<authenticator::Hackage>(dataset, packages, &db),
+                "mercury_diff" => run::<authenticator::MercuryDiff>(dataset, packages, &db),
+                "mercury_hash" => run::<authenticator::MercuryHash>(dataset, packages, &db),
+                "mercury_hash_diff" => {
+                    run::<authenticator::MercuryHashDiff>(dataset, packages, &db)
+                }
+                "merkle" => run::<authenticator::Merkle>(dataset, packages, &db),
+                "rsa" => run::<authenticator::Rsa>(dataset, packages, &db),
+                // TODO(must): try with different batch sizes
+                "rsa_pool" => run_batch::<authenticator::RsaPool>(
+                    dataset,
+                    packages,
+                    &db,
+                    vec![1, 10, 50, 100, 500, 1000],
+                ),
+                "vanilla_tuf" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
+                _ => panic!("not valid"),
             }
-            "vanilla_tuf" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
-            _ => panic!("not valid"),
-        }
-        .unwrap();
+            .unwrap();
+        });
+        insert_overall_time(&db, runtime, authenticator.as_str(), package_len);
     }
 
     Ok(())

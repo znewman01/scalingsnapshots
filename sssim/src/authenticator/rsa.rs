@@ -69,9 +69,13 @@ impl<A: Accumulator> Diff<A> {
     }
 }
 
-impl<A: Accumulator> DataSized for Diff<A> {
+impl<A: Accumulator> DataSized for Diff<A>
+where
+    A::Digest: DataSized,
+    A::AppendOnlyWitness: DataSized,
+{
     fn size(&self) -> Information {
-        todo!()
+        self.digest.size() + self.update.size()
     }
 }
 
@@ -369,6 +373,28 @@ where
     }
 }
 
+impl<A: BatchAccumulator> DataSized for CatchUpToEODProof<A>
+where
+    A::AppendOnlyWitness: DataSized,
+    A::Digest: DataSized,
+    A::BatchWitness: DataSized,
+{
+    fn size(&self) -> Information {
+        let mut size = Information::new::<byte>(0);
+        if self.bod_package_counts.len() > 0 {
+            let item = self.bod_package_counts.keys().next();
+            let len: u64 = self.bod_package_counts.len().try_into().unwrap();
+            size += (item.expect("map not empty").size() + Information::new::<byte>(4)) * len;
+        }
+
+        size += self.bod_package_membership_witness.size()
+            + self.eod_package_membership_witness.size()
+            + self.bod_to_eod.size()
+            + self.eod_digest.size();
+        size
+    }
+}
+
 #[derive(Derivative, Serialize)]
 #[derivative(Clone(bound = "A: Clone, A::AppendOnlyWitness: Clone, CatchUpToEODProof<A>: Clone"))]
 #[derivative(Default)]
@@ -382,9 +408,28 @@ pub struct PoolDiff<A: BatchAccumulator> {
     initial_digest: Option<A::Digest>,
 }
 
-impl<A: BatchAccumulator> DataSized for PoolDiff<A> {
+impl<A: BatchAccumulator> DataSized for PoolDiff<A>
+where
+    A::Digest: DataSized,
+    A::AppendOnlyWitness: DataSized,
+    CatchUpToEODProof<A>: DataSized,
+{
     fn size(&self) -> Information {
-        todo!()
+        let mut size = Information::new::<byte>(0);
+        if self.rest_of_current_day.len() > 0 {
+            let len: u64 = self.rest_of_current_day.len().try_into().unwrap();
+            size += len * self.rest_of_current_day[0].size();
+        }
+        if self.latest_pool.len() > 0 {
+            let len: u64 = self.latest_pool.len().try_into().unwrap();
+            size += len * self.latest_pool[0].size();
+        }
+        match &self.latest_digest {
+            None => {}
+            Some((d, a)) => size += d.size() + a.size(),
+        }
+        size += self.current_day_final_digest.size() + self.initial_digest.size();
+        size
     }
 }
 
