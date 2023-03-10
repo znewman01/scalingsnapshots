@@ -61,14 +61,14 @@ mod tests {
     proptest! {
         #[test]
         fn test_hash_to_prime(data: Vec<u8>) {
-            let result: Prime = hash_to_prime(&data)?;
+            let result: rug::Integer = hash_to_prime(&data)?.into();
             prop_assert!(result.significant_bits() <= 256);
         }
 
         #[test]
         fn test_hash_to_prime_unique(data1: Vec<u8>, data2: Vec<u8>) {
             prop_assume!(data1 != data2);
-            prop_assert_ne!(hash_to_prime(&data1), hash_to_prime(&data2));
+            prop_assert_ne!(hash_to_prime(&data1)?, hash_to_prime(&data2)?);
         }
     }
 }

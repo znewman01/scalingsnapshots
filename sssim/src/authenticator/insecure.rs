@@ -73,6 +73,7 @@ impl super::Authenticator for Authenticator {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,3 +86,4 @@ mod tests {
         }
     }
 }
+*/

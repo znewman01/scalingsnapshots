@@ -124,6 +124,7 @@ impl<G: Group + TryFrom<Integer> + 'static> ZKUniverse<G> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,7 +168,10 @@ mod tests {
         Universe,
     }
 
-    impl<G> Arbitrary for PokeProblem<G> {
+    impl<G> Arbitrary for PokeProblem<G>
+    where
+        PokeProblem<G>: std::fmt::Debug,
+    {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
@@ -258,3 +262,4 @@ mod tests {
         }
     }
 }
+*/

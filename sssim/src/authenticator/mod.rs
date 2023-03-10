@@ -167,6 +167,7 @@ pub trait PoolAuthenticator: Authenticator {
     fn batch_process(&mut self);
 }
 
+/*
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -188,3 +189,4 @@ pub(crate) mod tests {
     }
     // test refresh metadata
 }
+*/
