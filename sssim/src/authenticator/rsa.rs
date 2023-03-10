@@ -119,7 +119,7 @@ impl<A: Accumulator> super::Authenticator for Authenticator<A>
 where
     A: Default + fmt::Debug + DataSized,
     A::Digest: Clone + PartialEq + Eq + hash::Hash + fmt::Debug,
-    A::AppendOnlyWitness: Clone,
+    A::AppendOnlyWitness: Clone + fmt::Debug,
     A::Witness: Clone + DataSized + Serialize,
     Diff<A>: Clone + DataSized + Serialize,
     Snapshot<A>: Clone,

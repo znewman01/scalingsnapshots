@@ -708,7 +708,7 @@ where
 
             //check if cur_index is a power of 2 or is equal to 1
             // (power of 2 - 1 is all 1s)
-            if cur_index != 0 && cur_index & (cur_index - 1) == 0 {
+            if cur_index & (cur_index - 1) == 0 {
                 proof_slot.add(zku.prove(
                     instance,
                     poke::Witness {
@@ -733,12 +733,12 @@ where
         if &self.digest == prefix {
             panic!("identical");
         }
-        let idx = self.digests_to_indexes.get(prefix).unwrap();
-        let mut cur_idx = 0;
+        let mut cur_idx = *self.digests_to_indexes.get(prefix).unwrap();
+        let idx = self.append_only_proofs.len();
         let mut proof_list = vec![];
         let mut value_list = vec![];
 
-        while cur_idx < *idx {
+        while cur_idx < idx {
             let (proof, offset) = self.append_only_proofs[cur_idx].find_next(idx - cur_idx);
             cur_idx += offset;
             proof_list.push(proof);

@@ -314,7 +314,7 @@ where
         let cores = 1;
         let mut auth = auth.clone();
         for b in 0..batch_size {
-            let package_id = PackageId::from("new_package".to_string());
+            let package_id = PackageId::from(format!("new_package{}", b));
             let (update_time, _) = Duration::time_fn(|| {
                 auth.publish(package_id);
             });
@@ -464,15 +464,13 @@ fn refresh_user_state<A: Authenticator + Clone>(
     user_state_initial: A::ClientSnapshot,
 ) -> rusqlite::Result<()> {
     println!("refresh_user_state");
-    let mut elapsed_releases = VecDeque::from(vec![1, 10, 100, 1000, 10000, 100000]); // assume sorted
-    let max_entry: usize = elapsed_releases[elapsed_releases.len() - 1];
+    let mut elapsed_releases = VecDeque::from(vec![1, 10, 100, 1000]); // assume sorted
+    let max_entry: usize =
+        std::cmp::min(elapsed_releases[elapsed_releases.len() - 1], num_packages);
     let bar = ProgressBar::new(max_entry.try_into().unwrap());
     let mut auth = auth_ref.clone();
     for idx in 0..=max_entry {
         bar.inc(1);
-        if idx > num_packages {
-            break;
-        }
         if idx == elapsed_releases[0] {
             println!("On {idx} releases");
             for _ in 0..refresh_trials {
@@ -482,7 +480,7 @@ fn refresh_user_state<A: Authenticator + Clone>(
                     Some(diff) => {
                         let bandwidth = diff.size();
                         let (user_time, _) = Duration::time_fn(|| {
-                            A::check_no_rollback(&user_state, &diff);
+                            assert!(A::check_no_rollback(&user_state, &diff));
                             A::update(&mut user_state, diff);
                         });
                         (bandwidth, user_time)
@@ -666,7 +664,7 @@ fn main() -> io::Result<()> {
             "merkle",
             "rsa",
             "rsa_pool",
-            "vanilla_tuf",
+            "mercury",
         ]
         .into_iter()
         .map(String::from)
@@ -703,7 +701,7 @@ fn main() -> io::Result<()> {
                     &db,
                     vec![1, 10, 50, 100, 500, 1000],
                 ),
-                "vanilla_tuf" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
+                "mercury" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
                 _ => panic!("not valid"),
             }
             .unwrap();
