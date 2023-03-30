@@ -33,9 +33,20 @@ impl<C: Collector> Default for SkipList<C> {
     }
 }
 
-impl<C: Collector> DataSized for SkipList<C> {
+impl<C: Collector> DataSized for SkipList<C>
+where
+    SkipListEntry<C::Item, C::Proof>: DataSized,
+{
     fn size(&self) -> Information {
-        todo!();
+        // the first entry will always have the max number of proofs
+        // so this is an upper bound on the size
+        match self.entries.get(0) {
+            Some(e) => {
+                let len: u64 = self.entries.len().try_into().unwrap();
+                e.size() * len
+            }
+            None => uom::ConstZero::ZERO,
+        }
     }
 }
 
@@ -55,27 +66,26 @@ impl<C: Collector> SkipList<C> {
             if i & (i - 1) == 0 {
                 e.proofs.push(collector.to_proof(&e.item));
             }
+            collector.collect(&e.item);
         }
         self.entries.push(entry);
     }
 
-    pub fn read(&self, start: usize, end: usize) -> (Vec<C::Proof>, Vec<C::Item>) {
+    pub fn read(&self, start: usize, end: usize) -> Vec<(C::Proof, C::Item)> {
         assert!(start <= end);
         assert!(end < self.entries.len());
 
         let mut cur = start;
-        let mut proof_list = vec![];
-        let mut value_list = vec![];
+        let mut result = vec![];
 
         while cur < end {
             let cur_entry = &self.entries[cur];
             let (proof, offset) = cur_entry.find_next(end - cur);
-            proof_list.push(proof);
-            value_list.push(cur_entry.item.clone());
+            result.push((proof, cur_entry.item.clone()));
             cur += offset;
         }
 
-        (proof_list, value_list)
+        result
     }
 
     pub fn len(&self) -> usize {
@@ -106,6 +116,23 @@ where
             i += 1
         }
         (self.proofs[i - 1].clone(), 1 << (i - 1))
+    }
+}
+
+impl<I, P> DataSized for SkipListEntry<I, P>
+where
+    I: DataSized,
+    P: DataSized,
+{
+    fn size(&self) -> Information {
+        let size = self.item.size();
+        match self.proofs.get(0) {
+            Some(e) => {
+                let len: u64 = self.proofs.len().try_into().unwrap();
+                e.size() * len + size
+            }
+            None => size,
+        }
     }
 }
 

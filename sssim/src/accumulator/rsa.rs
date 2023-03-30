@@ -139,8 +139,7 @@ impl<G: Group + 'static> RsaAccumulatorDigest<G> {
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct AppendOnlyWitness<G> {
-    pokes: Vec<poke::Proof<G>>,
-    values: Vec<G>,
+    inner: Vec<(poke::Proof<G>, G)>,
 }
 
 impl<G> DataSized for AppendOnlyWitness<G>
@@ -150,11 +149,9 @@ where
 {
     fn size(&self) -> crate::util::Information {
         let mut size = uom::ConstZero::ZERO;
-        if self.values.len() > 0 {
-            size += u64::try_from(self.values.len()).unwrap() * self.values[0].size();
-        }
-        if self.pokes.len() > 0 {
-            size += u64::try_from(self.pokes.len()).unwrap() * self.pokes[0].size();
+        if self.inner.len() > 0 {
+            size += u64::try_from(self.inner.len()).unwrap() * self.inner[0].0.size();
+            size += u64::try_from(self.inner.len()).unwrap() * self.inner[0].1.size();
         }
         return size;
     }
@@ -333,6 +330,15 @@ where
                 x: self.exponent.clone(),
             },
         )
+    }
+}
+
+impl<G> DataSized for HistoryEntry<G>
+where
+    RsaAccumulatorDigest<G>: DataSized,
+{
+    fn size(&self) -> crate::util::Information {
+        self.exponent.size() + self.end_digest.size()
     }
 }
 
@@ -672,11 +678,13 @@ where
         let mut cur_idx = *self.digests_to_indexes.get(prefix).unwrap();
         let idx = self.history.len() - 1;
 
-        let (proof_list, value_list) = self.history.read(cur_idx, idx);
+        let proof_value_list = self.history.read(cur_idx, idx);
 
         AppendOnlyWitness {
-            pokes: proof_list,
-            values: value_list.into_iter().map(|i| i.end_digest.value).collect(),
+            inner: proof_value_list
+                .into_iter()
+                .map(|(a, b)| (a, b.end_digest.value))
+                .collect(),
         }
     }
 
@@ -772,19 +780,19 @@ where
         proof: &Self::AppendOnlyWitness,
         new_state: &Self::Digest,
     ) -> bool {
-        let mut cur = digest.value.clone();
-        for (inner_proof, value) in Iterator::zip(proof.pokes.iter(), proof.values.iter()) {
+        let mut cur = new_state.value.clone();
+        for (inner_proof, value) in proof.inner.iter().rev() {
             let zku = poke::ZKUniverse::<G>::default();
             let instance = poke::Instance {
-                w: value.clone(),
-                u: cur,
+                w: cur,
+                u: value.clone(),
             };
             if !zku.verify(instance, inner_proof.clone()) {
                 return false;
             }
             cur = value.clone();
         }
-        cur == new_state.value
+        cur == digest.value
     }
 
     fn cdn_size(&self) -> Information {

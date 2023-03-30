@@ -699,7 +699,7 @@ fn main() -> io::Result<()> {
                     dataset,
                     packages,
                     &db,
-                    vec![1, 10, 50, 100, 500, 1000],
+                    vec![1, 10, 50, 100],
                 ),
                 "mercury" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
                 _ => panic!("not valid"),
