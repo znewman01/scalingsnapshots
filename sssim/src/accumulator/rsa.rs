@@ -2,6 +2,7 @@
 use crate::accumulator::{Accumulator, BatchAccumulator};
 use crate::poke;
 use crate::primitives::{Collector, Group, PositiveInteger, Prime, SkipList};
+use crate::util::byte;
 use crate::util::DataSized;
 use crate::{multiset::MultiSet, util::DataSizeFromSerialize, util::Information};
 use rayon::prelude::*;
@@ -361,9 +362,39 @@ impl<G> DataSized for RsaAccumulator<G>
 where
     HistoryEntry<G>: Collector,
     SkipList<HistoryEntry<G>>: std::fmt::Debug,
+    SkipList<HistoryEntry<G>>: DataSized,
+    RsaAccumulatorDigest<G>: DataSized,
+    Witness<G>: DataSized,
+    NonMembershipWitness<G>: DataSized,
 {
     fn size(&self) -> crate::util::Information {
-        uom::ConstZero::ZERO
+        let mut size = self.digest.size() + self.history.size() + self.exponent.size();
+        let multi_len: u64 = self.multiset.len().try_into().unwrap();
+        size += multi_len * Information::new::<byte>(4);
+        if self.proof_cache.len() > 0 {
+            let item = self.proof_cache.keys().next();
+            let val = self.proof_cache.values().next();
+            let len: u64 = self.proof_cache.len().try_into().unwrap();
+            size +=
+                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
+        }
+
+        if self.nonmember_proof_cache.len() > 0 {
+            let item = self.nonmember_proof_cache.keys().next();
+            let val = self.nonmember_proof_cache.values().next();
+            let len: u64 = self.nonmember_proof_cache.len().try_into().unwrap();
+            size +=
+                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
+        }
+
+        if self.digests_to_indexes.len() > 0 {
+            let item = self.digests_to_indexes.keys().next();
+            let val = self.proof_cache.values().next();
+            let len: u64 = self.digests_to_indexes.len().try_into().unwrap();
+            size +=
+                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
+        }
+        size
     }
 }
 

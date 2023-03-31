@@ -50,9 +50,12 @@ fn convert_package_counts(package_counts: &HashMap<PackageId, u32>) -> HashMap<P
     hashed_package_counts
 }
 
-impl<A: Accumulator> DataSized for Snapshot<A> {
+impl<A: Accumulator> DataSized for Snapshot<A>
+where
+    A::Digest: DataSized,
+{
     fn size(&self) -> Information {
-        Information::new::<byte>(0)
+        self.digest.size()
     }
 }
 
@@ -122,7 +125,8 @@ where
     A::AppendOnlyWitness: Clone + fmt::Debug,
     A::Witness: Clone + DataSized + Serialize,
     Diff<A>: Clone + DataSized + Serialize,
-    Snapshot<A>: Clone,
+    Snapshot<A>: Clone + DataSized,
+    Authenticator<A>: DataSized,
 {
     type ClientSnapshot = Snapshot<A>;
     type Id = Option<A::Digest>;
@@ -227,9 +231,24 @@ where
     }
 }
 
-impl<A: Accumulator> DataSized for Authenticator<A> {
+impl<A: Accumulator> DataSized for Authenticator<A>
+where
+    A: DataSized,
+    A::Digest: DataSized,
+{
     fn size(&self) -> Information {
-        Information::new::<byte>(0)
+        let mut size = self.acc.size();
+        let len: u64 = self.log.len().try_into().unwrap();
+        size += len * Information::new::<byte>(32);
+
+        if self.old_acc_idxs.len() > 0 {
+            let item = self.old_acc_idxs.keys().next();
+            let len: u64 = self.old_acc_idxs.len().try_into().unwrap();
+            //val is usize
+            let val = Information::new::<byte>(8);
+            size += (item.expect(" ").size() + val) * len;
+        }
+        size
     }
 }
 
@@ -340,9 +359,19 @@ pub struct PoolSnapshot<A: BatchAccumulator> {
     pool: Vec<PackageId>,
 }
 
-impl<A: BatchAccumulator> DataSized for PoolSnapshot<A> {
+impl<A: BatchAccumulator> DataSized for PoolSnapshot<A>
+where
+    Snapshot<A>: DataSized,
+{
     fn size(&self) -> Information {
-        uom::ConstZero::ZERO
+        let size = self.inner.size();
+        match self.pool.get(0) {
+            None => size,
+            Some(a) => {
+                let len: u64 = self.pool.len().try_into().unwrap();
+                a.size() * len + size
+            }
+        }
     }
 }
 
@@ -572,6 +601,40 @@ struct Epoch<A: BatchAccumulator> {
     bod_to_eod: A::AppendOnlyWitness,
 }
 
+impl<A: BatchAccumulator> DataSized for Epoch<A>
+where
+    A::Digest: DataSized,
+    A::BatchWitness: DataSized,
+    A::AppendOnlyWitness: DataSized,
+{
+    fn size(&self) -> Information {
+        let mut size = self.eod_digest.size()
+            + self.bod_package_membership_witness.size()
+            + self.eod_package_membership_witness.size()
+            + self.bod_to_eod.size();
+        if self.packages.len() > 0 {
+            let len: u64 = self.packages.len().try_into().unwrap();
+            size += len * self.packages[0].size();
+        }
+        if self.bod_package_counts.len() > 0 {
+            let len: u64 = self.bod_package_counts.len().try_into().unwrap();
+            let item = self.bod_package_counts.keys().next();
+            // val is usize
+            let val = Information::new::<byte>(8);
+            size += (item.expect(" ").size() + val) * len;
+        }
+
+        if self.eod_package_counts.len() > 0 {
+            let len: u64 = self.eod_package_counts.len().try_into().unwrap();
+            let item = self.eod_package_counts.keys().next();
+            // val is usize
+            let val = Information::new::<byte>(8);
+            size += (item.expect(" ").size() + val) * len;
+        }
+        size
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(Clone(bound = "A: Clone, Epoch<A>: Clone, A::Digest: Clone"))]
 #[derivative(Debug(
@@ -594,9 +657,16 @@ pub enum PoolWitness<A: Accumulator> {
     Nonmember(A::NonMembershipWitness),
 }
 
-impl<A: Accumulator> DataSized for PoolWitness<A> {
+impl<A: Accumulator> DataSized for PoolWitness<A>
+where
+    A::Witness: DataSized,
+    A::NonMembershipWitness: DataSized,
+{
     fn size(&self) -> Information {
-        Information::new::<byte>(0)
+        match self {
+            Self::Member(inner) => inner.size(),
+            Self::Nonmember(inner) => inner.size(),
+        }
     }
 }
 
@@ -618,6 +688,8 @@ where
     A::AppendOnlyWitness: Clone + Default,
     PoolWitness<A>: Clone + DataSized + Serialize,
     Epoch<A>: Clone,
+    PoolAuthenticator<A>: DataSized,
+    PoolSnapshot<A>: DataSized,
 {
     type ClientSnapshot = PoolSnapshot<A>;
     type Id = Option<(A::Digest, usize)>;
@@ -837,8 +909,29 @@ where
     }
 }
 
-impl<A: BatchAccumulator> DataSized for PoolAuthenticator<A> {
+impl<A: BatchAccumulator> DataSized for PoolAuthenticator<A>
+where
+    A::Digest: DataSized,
+    Authenticator<A>: DataSized,
+    Epoch<A>: DataSized,
+{
     fn size(&self) -> Information {
-        Information::new::<byte>(0)
+        let mut size = self.inner.size();
+        let len: u64 = self.past_epochs.len().try_into().unwrap();
+        size += len * Information::new::<byte>(32);
+
+        if self.epoch_idxs_by_digest.len() > 0 {
+            let len: u64 = self.epoch_idxs_by_digest.len().try_into().unwrap();
+            let item = self.epoch_idxs_by_digest.keys().next();
+            // val is usize
+            let val = Information::new::<byte>(8);
+            size += (item.expect(" ").size() + val) * len;
+        }
+
+        if self.current_pool.len() > 0 {
+            let len: u64 = self.current_pool.len().try_into().unwrap();
+            size += len * self.current_pool[0].size();
+        }
+        size
     }
 }

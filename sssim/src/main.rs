@@ -55,7 +55,6 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         )",
         [],
     )?;
-    // TODO(must): rsa server_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS precompute_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +68,6 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         )",
         [],
     )?;
-    // TODO(must): rsa server_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS update_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +82,6 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
          )",
         [],
     )?;
-    // TODO(must): server_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS merge_results (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +96,6 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
         )",
         [],
     )?;
-    // TODO(must): rsa_pool bandwidth_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS download_results (
              id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +107,6 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
          )",
         [],
     )?;
-    // TODO(must): actually measure rsa user_state_bytes
     db.execute(
         "CREATE TABLE IF NOT EXISTS refresh_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -699,7 +694,7 @@ fn main() -> io::Result<()> {
                     dataset,
                     packages,
                     &db,
-                    vec![1, 10, 50, 100],
+                    vec![1, 10, 50, 100, 500],
                 ),
                 "mercury" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
                 _ => panic!("not valid"),
