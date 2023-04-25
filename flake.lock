@@ -523,7 +523,7 @@
       },
       "locked": {
         "lastModified": 1,
-        "narHash": "sha256-Ls9+kQDZQzzxuRe/ioth4XWhi6O494p6ZzDO+6IvSHU=",
+        "narHash": "sha256-MeRFVKffZ1e+orlD9irXAfcV5OojGrk8/rnkLILJfAg=",
         "path": "sssim",
         "type": "path"
       },

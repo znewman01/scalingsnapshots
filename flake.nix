@@ -20,10 +20,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        rust = fenix.packages.${system}.fromToolchainFile {
-          file = ./sssim/rust-toolchain.toml;
-          sha256 = "sha256-rSeLZ/Kx5HiZYq+tsDtWPPktbGKhodWCPryRG6CZSxU=";
-        };
+        inherit (sssim.packages.${system}) rust;
       in rec {
         apps = {
           sssim = sssim.apps.${system}.default;

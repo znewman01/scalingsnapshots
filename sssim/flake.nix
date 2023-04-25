@@ -17,26 +17,29 @@
         pkgs = import nixpkgs { inherit system; };
         rust = fenix.packages.${system}.fromToolchainFile {
           dir = ./.;
-          sha256 = "sha256-rSeLZ/Kx5HiZYq+tsDtWPPktbGKhodWCPryRG6CZSxU=";
+          sha256 = "sha256-uYy74UmBBs4KaKyv2mc2cfgdbKDAEcC0CCBS6I2jeX0=";
         };
         naersk-lib = naersk.lib.${system}.override {
           rustc = rust;
           cargo = rust;
         };
       in rec {
-        packages.default = let
-          cargoPackage =
-            (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
-        in naersk-lib.buildPackage {
-          pname = cargoPackage.name;
-          inherit (cargoPackage) version;
-          nativeBuildInputs = [ pkgs.gnum4 ];
-          root = ./.;
-          doCheck = true;
-          # Workaround for https://github.com/cachix/pre-commit-hooks.nix/issues/94
-          postInstall = ''
-            cp -r $CARGO_HOME $out/.cargo
-          '';
+        packages = {
+          inherit rust;
+          default = let
+            cargoPackage =
+              (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
+          in naersk-lib.buildPackage {
+            pname = cargoPackage.name;
+            inherit (cargoPackage) version;
+            nativeBuildInputs = [ pkgs.gnum4 ];
+            root = ./.;
+            doCheck = true;
+            # Workaround for https://github.com/cachix/pre-commit-hooks.nix/issues/94
+            postInstall = ''
+              cp -r $CARGO_HOME $out/.cargo
+            '';
+          };
         };
         apps.default = flake-utils.lib.mkApp { drv = packages.default; };
         devShells.default = pkgs.mkShell {
