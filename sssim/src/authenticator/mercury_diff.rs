@@ -2,13 +2,11 @@ use crate::util::DataSized;
 use std::collections::HashMap;
 
 #[cfg(test)]
-use {proptest::prelude::*, proptest_derive::Arbitrary};
+use proptest_derive::Arbitrary;
 
 use serde::Serialize;
 
-use crate::{
-    authenticator::Revision, log::PackageId, util::DataSizeFromSerialize, util::Information,
-};
+use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Debug, Clone, Copy, Serialize)]
@@ -22,6 +20,12 @@ impl From<Revision> for Metadata {
     }
 }
 
+impl DataSized for Metadata {
+    fn size(&self) -> Information {
+        self.revision.size()
+    }
+}
+
 /// The mercury TUF client snapshot contains *all* the snapshot state.
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
@@ -30,7 +34,17 @@ pub struct Snapshot {
     id: u64,
 }
 
-impl DataSizeFromSerialize for Snapshot {}
+impl DataSized for Snapshot {
+    fn size(&self) -> Information {
+        let mut size = Information::new::<byte>(8); // id
+        let len: u64 = self.packages.len().try_into().unwrap();
+        size += match self.packages.iter().next() {
+            Some((k, v)) => (k.size() + v.size()) * len,
+            None => Information::new::<byte>(0),
+        };
+        size
+    }
+}
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -39,7 +53,16 @@ pub struct Authenticator {
     snapshot: Snapshot,
 }
 
-impl DataSizeFromSerialize for Authenticator {}
+impl DataSized for Authenticator {
+    fn size(&self) -> Information {
+        let mut size = self.snapshot.size();
+        for snapshot in self.snapshots.values() {
+            size += Information::new::<byte>(8); // key
+            size += snapshot.size();
+        }
+        size
+    }
+}
 
 #[allow(unused_variables)]
 impl super::Authenticator for Authenticator {
@@ -93,7 +116,7 @@ impl super::Authenticator for Authenticator {
     }
 
     fn publish(&mut self, package: PackageId) {
-        // TODO(meh): this is slow, consider using log data structure
+        // TODO(maybe): this is slow, consider using log data structure
         // also consider using immutable map
         self.snapshots
             .insert(self.snapshot.id, self.snapshot.clone());

@@ -140,20 +140,24 @@ where
 mod test {
     use super::*;
 
-    impl Collector for usize {
+    fn verify_proof(start: usize, end: usize, proof: (usize, usize)) -> bool {
+        proof.0 == start && proof.1 == end
+    }
+
+    impl Collector for (usize, usize) {
         type Item = usize;
         type Proof = (usize, usize);
 
         fn init(item: &Self::Item) -> Self {
-            *item
+            (*item, *item)
         }
 
         fn collect(&mut self, item: &Self::Item) {
-            return;
+            self.0 = *item;
         }
 
         fn to_proof(&self, item: &Self::Item) -> Self::Proof {
-            return (*item, *self);
+            (*item, self.1)
         }
     }
 
@@ -174,11 +178,14 @@ mod test {
         let mut list = SkipList::<(usize, usize)>::default();
         list.add(0);
         list.add(1);
-        let (p, v) = list.read(0, 1);
-        assert!(p.len() == 1);
-        assert!(v.len() == 1);
-        assert!(p[0] == (0, 1));
-        assert!(v[0] == 0);
+
+        println!("{:?}", list);
+
+        let proof = list.read(0, 1);
+        assert!(proof.len() == 1);
+        assert_eq!(0, proof[0].1);
+        assert!(verify_proof(0, 1, proof[0].0));
+
         list.add(2);
         list.add(3);
         list.add(4);
@@ -188,8 +195,11 @@ mod test {
 
         println!("{:?}", list);
 
-        let (p, v) = list.read(0, 6);
-        assert_eq!(p, vec![(0, 4), (4, 6)]);
-        assert_eq!(v, vec![0, 4]);
+        let proof = list.read(0, 6);
+        assert!(proof.len() == 2);
+        assert_eq!(0, proof[0].1);
+        assert!(verify_proof(0, 4, proof[0].0));
+        assert_eq!(4, proof[1].1);
+        assert!(verify_proof(4, 6, proof[1].0));
     }
 }

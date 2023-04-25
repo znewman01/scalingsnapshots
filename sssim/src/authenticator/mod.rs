@@ -1,10 +1,9 @@
 mod hackage;
 mod insecure;
 mod mercury_diff;
-mod mercury_hash;
-mod mercury_hash_diff;
-mod merkle;
+// mod merkle;
 mod rsa;
+mod sparse_merkle;
 mod vanilla_tuf;
 
 use std::{
@@ -14,20 +13,20 @@ use std::{
 
 use serde::Serialize;
 
-use crate::{accumulator::rsa::RsaAccumulator, util::DataSizeFromSerialize, util::Information};
+use crate::{accumulator::rsa::RsaAccumulator, util::Information};
 
 use crate::primitives::RsaGroup;
 pub use hackage::Authenticator as Hackage;
 pub use insecure::Authenticator as Insecure;
 pub use mercury_diff::Authenticator as MercuryDiff;
-pub use mercury_hash::Authenticator as MercuryHash;
-pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
-pub use merkle::Authenticator as Merkle;
+// pub use mercury_hash::Authenticator as MercuryHash;
+// pub use mercury_hash_diff::Authenticator as MercuryHashDiff;
+pub use sparse_merkle::Authenticator as SparseMerkle;
 pub type Rsa = rsa::Authenticator<RsaAccumulator<RsaGroup>>;
 pub type RsaPool = rsa::PoolAuthenticator<RsaAccumulator<RsaGroup>>;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
 
-use crate::{log::PackageId, util::DataSized};
+use crate::{log::PackageId, util::byte, util::DataSized};
 
 #[cfg(test)]
 use {proptest::prelude::*, proptest_derive::Arbitrary};
@@ -35,7 +34,11 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Revision(pub NonZeroU64);
 
-impl DataSizeFromSerialize for Revision {}
+impl DataSized for Revision {
+    fn size(&self) -> Information {
+        return Information::new::<byte>(8);
+    }
+}
 
 impl From<usize> for Revision {
     fn from(revision: usize) -> Self {

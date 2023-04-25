@@ -4,7 +4,7 @@ use crate::poke;
 use crate::primitives::{Collector, Group, PositiveInteger, Prime, SkipList};
 use crate::util::byte;
 use crate::util::DataSized;
-use crate::{multiset::MultiSet, util::DataSizeFromSerialize, util::Information};
+use crate::{multiset::MultiSet, util::Information};
 use rayon::prelude::*;
 use rug::Complete;
 use rug::{ops::Pow, Integer};
@@ -43,6 +43,15 @@ impl<G: Group> MembershipWitness<G> {
     }
 }
 
+impl<G> DataSized for MembershipWitness<G>
+where
+    G: DataSized,
+{
+    fn size(&self) -> Information {
+        self.0.size()
+    }
+}
+
 #[derive(Clone, Serialize, Debug)]
 pub struct NonMembershipWitness<G> {
     exp: Integer,
@@ -75,7 +84,7 @@ impl<G: Group + 'static> NonMembershipWitness<G> {
         }
 
         // new_exp * member + _ * value = 1
-        let (gcd, s, t) = Integer::gcd_cofactors_ref(value.inner(), new_element.borrow()).into();
+        let (gcd, s, t) = Integer::extended_gcd_ref(value.inner(), new_element.borrow()).into();
         debug_assert_eq!(gcd, 1u8);
 
         let (q, r) = (self.exp.clone() * t).div_rem_ref(value.inner()).complete();
@@ -102,7 +111,15 @@ pub struct Witness<G> {
     nonmember: NonMembershipWitness<G>,
 }
 
-impl<G> DataSizeFromSerialize for Witness<G> where G: Serialize {}
+impl<G> DataSized for Witness<G>
+where
+    MembershipWitness<G>: DataSized,
+    NonMembershipWitness<G>: DataSized,
+{
+    fn size(&self) -> Information {
+        self.member.size() + self.nonmember.size()
+    }
+}
 
 impl<G> Witness<G> {
     fn new(member: MembershipWitness<G>, nonmember: NonMembershipWitness<G>) -> Self {
@@ -175,7 +192,18 @@ impl<W: DataSized> DataSized for BatchWitness<W> {
     }
 }
 
-impl<G> DataSizeFromSerialize for HashMap<Prime, Witness<G>> where G: Serialize {}
+impl<G> DataSized for HashMap<Prime, Witness<G>>
+where
+    Witness<G>: DataSized,
+{
+    fn size(&self) -> Information {
+        let len: u64 = self.len().try_into().unwrap();
+        match self.iter().next() {
+            None => Information::new::<byte>(0),
+            Some((k, v)) => (k.size() + v.size()) * len,
+        }
+    }
+}
 
 impl<G: Group + TryFrom<Integer> + 'static> BatchAccumulator for RsaAccumulator<G>
 where
@@ -343,6 +371,7 @@ where
     }
 }
 
+// TODO(probably not): shard storage across # cores
 #[derive(Default, Debug, Clone)]
 pub struct RsaAccumulator<G>
 where
@@ -471,7 +500,7 @@ fn precompute_helper<G: Group + 'static>(
     // s * e_l + t * e_r = 1
     // => a = a * s * e_l + a * t * e_r
     let (gcd, s, t) =
-        Integer::gcd_cofactors(values_left.clone(), members_right.clone(), Integer::new());
+        Integer::extended_gcd(values_left.clone(), members_right.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_left
@@ -486,7 +515,7 @@ fn precompute_helper<G: Group + 'static>(
 
     // symmetric
     let (gcd, s, t) =
-        Integer::gcd_cofactors(values_right.clone(), members_left.clone(), Integer::new());
+        Integer::extended_gcd(values_right.clone(), members_left.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
     let at = proof.exp.clone() * t.clone();
     // reduce a * t mod e_right
@@ -579,7 +608,7 @@ fn precompute<G: Group + 'static>(
     }
 
     // a * 1 + b * e_star = 1
-    let (gcd, a, b) = Integer::gcd_cofactors(1u8.into(), e_star.clone(), Integer::new());
+    let (gcd, a, b) = Integer::extended_gcd(1u8.into(), e_star.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
     let base = G::default() * &b;
     let proof = NonMembershipWitness { exp: a, base };
@@ -616,9 +645,12 @@ impl<G: Group + TryFrom<rug::Integer> + 'static> RsaAccumulator<G> {
             return None; // value is a member!
         }
 
+        // TODO(maybe): parallelize GCD
+        // gcd(a1, b) = 1 and gcd(a2, b) =1 => gcd(a1 * a2, b) = 1
+
         // Bezout coefficients:
         // gcd: exp * s + value * t = 1
-        let (gcd, s, t) = Integer::gcd_cofactors_ref(&self.exponent, value.borrow()).into();
+        let (gcd, s, t) = Integer::extended_gcd_ref(&self.exponent, value.borrow()).into();
         if gcd != 1u8 {
             unreachable!("value should be coprime with the exponent of the accumulator");
         }
@@ -643,6 +675,7 @@ where
     NonMembershipWitness<G>: DataSized,
     SkipList<HistoryEntry<G>>: DataSized,
     RsaAccumulatorDigest<G>: DataSized,
+    Witness<G>: DataSized,
 {
     type Digest = RsaAccumulatorDigest<G>;
     type Witness = Witness<G>;
@@ -706,7 +739,7 @@ where
         if &self.digest == prefix {
             panic!("identical");
         }
-        let mut cur_idx = *self.digests_to_indexes.get(prefix).unwrap();
+        let cur_idx = *self.digests_to_indexes.get(prefix).unwrap();
         let idx = self.history.len() - 1;
 
         let proof_value_list = self.history.read(cur_idx, idx);

@@ -22,7 +22,7 @@
         pkgs = import nixpkgs { inherit system; };
         rust = fenix.packages.${system}.fromToolchainFile {
           file = ./sssim/rust-toolchain.toml;
-          sha256 = "/nC+LSETp1A78j+uU7TcCHnmLgjEtcIm809GTnNNdYE=";
+          sha256 = "sha256-rSeLZ/Kx5HiZYq+tsDtWPPktbGKhodWCPryRG6CZSxU=";
         };
       in rec {
         apps = {

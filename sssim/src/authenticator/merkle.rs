@@ -1,129 +1,88 @@
-use serde::{Serialize, Serializer};
-use smtree::index::TreeIndex;
-use smtree::node_template::HashNodeSmt;
-use smtree::pad_secret::ALL_ZEROS_SECRET;
-use smtree::proof::MerkleProof;
-use smtree::traits::{InclusionProvable, ProofExtractable};
-use smtree::tree::SparseMerkleTree;
+//! TODO(maybe): this is Mercury, not vanilla TUF.
+//! Vanilla TUF downloads *all* metadata:
+//! - snapshot: map from filename to HASH of targets metadata
+//! - targets metadata, which includes version number
+//!   - only new targets, because duh
 use std::collections::HashMap;
-use uom::si::information::byte;
-use uom::si::u64::Information;
-use uom::ConstZero;
 
-use authenticator::Revision;
+#[cfg(test)]
+use {proptest::prelude::*, proptest_derive::Arbitrary};
 
-use crate::util::{DataSizeFromSerialize, STRING_BYTES};
+use serde::Serialize;
 
-use crate::{authenticator, log::PackageId, util::DataSized};
+use crate::util::DataSized;
 
-static TREE_HEIGHT: usize = 256;
-type Node = HashNodeSmt<blake3::Hasher>;
-type Root = <Node as ProofExtractable>::ProofNode;
+use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
 
-fn smtree_serialize<S, V>(value: &V, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    V: smtree::traits::Serializable,
-{
-    s.serialize_bytes(&smtree::traits::Serializable::serialize(value))
+#[cfg_attr(test, derive(Arbitrary))]
+#[derive(Default, Clone, Debug, Serialize)]
+pub struct Snapshot {
+    packages: HashMap<PackageId, Revision>,
+    id: u64,
+}
+
+impl DataSized for Snapshot {
+    fn size(&self) -> Information {
+        let mut size = Information::new::<byte>(8); // id
+        let len: u64 = self.packages.len().try_into().unwrap();
+        size += match self.packages.iter().next() {
+            Some((k, v)) => (k.size() + v.size()) * len,
+            None => Information::new::<byte>(0),
+        };
+        size
+    }
 }
 
 /// The vanilla TUF client snapshot contains *all* the snapshot state.
+
+/// An authenticator as-in vanilla TUF.
+#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
-pub struct Snapshot {
-    #[serde(serialize_with = "smtree_serialize")]
-    root: Root,
-}
-
-impl DataSizeFromSerialize for Snapshot {}
-
-impl Snapshot {
-    pub fn new(root: Root) -> Self {
-        Self { root }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Proof {
-    #[serde(serialize_with = "smtree_serialize")]
-    inner: MerkleProof<Node>,
-}
-
-impl DataSizeFromSerialize for Proof {}
-
-impl From<MerkleProof<Node>> for Proof {
-    fn from(inner: MerkleProof<Node>) -> Self {
-        Proof { inner }
-    }
-}
-
-fn hash(data: &[u8]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(data);
-    *hasher.finalize().as_bytes()
-}
-
-#[derive(Debug, Clone)]
 pub struct Authenticator {
-    tree: SparseMerkleTree<Node>,
-    revisions: HashMap<PackageId, Revision>,
+    snapshot: Snapshot,
 }
 
-impl Default for Authenticator {
-    fn default() -> Self {
-        Self {
-            // SparseMerkleTree::default gives it a height of 0!!
-            tree: SparseMerkleTree::new(TREE_HEIGHT),
-            revisions: Default::default(),
-        }
+impl DataSized for Authenticator {
+    fn size(&self) -> Information {
+        self.snapshot.size()
     }
 }
 
 #[allow(unused_variables)]
 impl super::Authenticator for Authenticator {
     type ClientSnapshot = Snapshot;
-    type Id = Root;
+    type Id = u64;
     type Diff = Snapshot;
-    type Proof = Proof;
+    type Proof = ();
 
     fn name() -> &'static str {
-        "merkle"
+        "vanilla_tuf"
     }
 
     fn batch_import(packages: Vec<PackageId>) -> Self {
-        let mut nodes = Vec::<(TreeIndex, Node)>::new();
-        let mut revisions = HashMap::<PackageId, Revision>::new();
+        let mut snapshot = Snapshot::default();
         for p in packages {
-            let idx = TreeIndex::new(TREE_HEIGHT, hash(p.0.as_bytes()));
-            let revision = Revision::default();
-            revisions.insert(p, revision);
-            let node = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
-            nodes.push((idx, node));
+            snapshot.packages.insert(p, Revision::default());
         }
-        let mut tree = SparseMerkleTree::new(TREE_HEIGHT);
-        nodes.sort_by_key(|(x, _)| *x);
-        tree.build(&nodes, &ALL_ZEROS_SECRET);
-        Self { tree, revisions }
+        snapshot.id = 1;
+        Self { snapshot }
     }
 
     fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
-        let my_root = self.tree.get_root();
-        if snapshot_id == my_root {
+        if snapshot_id == Self::id(&self.snapshot) {
+            // already up to date
             return None;
         }
-        Some(Snapshot::new(my_root))
+        Some(self.snapshot.clone())
     }
 
     fn publish(&mut self, package: PackageId) {
-        let idx = TreeIndex::new(TREE_HEIGHT, hash(package.0.as_bytes()));
-        let revision = self
-            .revisions
+        self.snapshot.id += 1;
+        self.snapshot
+            .packages
             .entry(package)
             .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
             .or_insert_with(Revision::default);
-
-        let node = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
-        self.tree.update(&idx, node, &ALL_ZEROS_SECRET);
     }
 
     fn request_file(
@@ -132,29 +91,38 @@ impl super::Authenticator for Authenticator {
         package: &PackageId,
     ) -> (Revision, Self::Proof) {
         let revision = self
-            .revisions
+            .snapshot
+            .packages
             .get(package)
             .expect("Should never get a request for a package that's missing.");
-        let idx = TreeIndex::new(TREE_HEIGHT, hash(package.0.as_bytes()));
-        let proof = MerkleProof::<Node>::generate_inclusion_proof(&self.tree, &[idx])
-            .expect("Proof generation failed.");
-
-        (*revision, proof.into())
+        (*revision, ())
     }
 
     fn get_metadata(&self) -> Snapshot {
-        Snapshot::new(self.tree.get_root())
+        self.snapshot.clone()
     }
 
     fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
-        snapshot.root.clone()
+        snapshot.id
     }
 
     fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
-        snapshot.root = diff.root
+        snapshot.packages = diff.packages;
+        snapshot.id = diff.id
     }
 
-    fn check_no_rollback(snapshot: &Self::ClientSnapshot, _diff: &Self::Diff) -> bool {
+    fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
+        for (package_id, old_revision) in &snapshot.packages {
+            let new_revision = match diff.packages.get(package_id) {
+                None => {
+                    return false;
+                }
+                Some(r) => r,
+            };
+            if new_revision < old_revision {
+                return false;
+            }
+        }
         true
     }
 
@@ -162,61 +130,37 @@ impl super::Authenticator for Authenticator {
         snapshot: &Self::ClientSnapshot,
         package_id: &PackageId,
         revision: Revision,
-        proof: Self::Proof,
+        _: Self::Proof,
     ) -> bool {
-        let expected_index = TreeIndex::new(TREE_HEIGHT, hash(package_id.0.as_bytes()));
-        let leaf = Node::new(hash(&revision.0.get().to_be_bytes()).to_vec());
-        let idxs = proof.inner.get_indexes();
-        if idxs.len() != 1 {
-            return false;
+        if let Some(old_revision) = snapshot.packages.get(package_id) {
+            &revision == old_revision
+        } else {
+            false
         }
-        if idxs[0] != expected_index {
-            return false;
-        }
-        if !proof.inner.verify(&leaf, &snapshot.root) {
-            return false;
-        }
-        true
     }
 
     fn cdn_size(&self) -> Information {
-        let leaf_size = 16 + 8 + STRING_BYTES + 3 * 8;
-        let internal_size = 16 + 3 * 8;
-        let num_leaves = self.tree.get_leaves().len();
-
-        // assume worst case: all internal nodes, no padding
-        Information::new::<byte>(
-            (num_leaves * leaf_size + self.tree.get_nodes_num() * internal_size)
-                .try_into()
-                .unwrap(),
-        )
+        let mut size = self.snapshot.id.size();
+        for (key, value) in &self.snapshot.packages {
+            size += key.size();
+            size += value.size();
+        }
+        size
     }
 }
 
-impl DataSized for Authenticator {
-    fn size(&self) -> Information {
-        let mut snapshot_size = Information::new::<byte>(
-            TryInto::try_into(std::mem::size_of::<Self>()).expect("Not that big"),
-        );
-        for (package_id, revision) in &self.revisions {
-            snapshot_size += package_id.size();
-            snapshot_size += revision.size();
-        }
-
-        let mut tree_size = Information::ZERO;
-        for _ in itertools::chain!(
-            self.tree.get_leaves().into_iter(),
-            self.tree.get_internals().into_iter(),
-            self.tree.get_paddings().into_iter(),
-        ) {
-            tree_size += Information::new::<byte>(32); // blake3 output fixed
-        }
-
-        snapshot_size + tree_size
-    }
-}
-
+/*
 #[cfg(test)]
 mod tests {
-    // TODO(test): fix tests
+    use super::*;
+    use crate::authenticator::tests;
+
+    proptest! {
+        #[ignore] // TODO(test): fix tests::update
+        #[test]
+        fn update((authenticator, snapshot) in (any::<Authenticator>(), any::<Snapshot>())) {
+            tests::update(snapshot, &authenticator)?;
+        }
+    }
 }
+*/

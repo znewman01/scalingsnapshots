@@ -1,18 +1,21 @@
 use serde::Serialize;
 
 #[cfg(test)]
-use {proptest::prelude::*, proptest_derive::Arbitrary};
+use proptest_derive::Arbitrary;
 
 use crate::{
-    authenticator::Revision, log::PackageId, util::byte, util::DataSizeFromSerialize,
-    util::Information,
+    authenticator::Revision, log::PackageId, util::byte, util::DataSized, util::Information,
 };
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {}
 
-impl DataSizeFromSerialize for Snapshot {}
+impl DataSized for Snapshot {
+    fn size(&self) -> Information {
+        return Information::new::<byte>(0);
+    }
+}
 
 /// An insecure authenticator.
 ///
@@ -21,7 +24,11 @@ impl DataSizeFromSerialize for Snapshot {}
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {}
 
-impl DataSizeFromSerialize for Authenticator {}
+impl DataSized for Authenticator {
+    fn size(&self) -> Information {
+        return Information::new::<byte>(0);
+    }
+}
 
 #[allow(unused_variables)]
 impl super::Authenticator for Authenticator {

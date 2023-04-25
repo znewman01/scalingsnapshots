@@ -1,12 +1,12 @@
 use digest::{ExtendableOutput, Update, XofReader};
 use rug;
-use sha3::{Sha3XofReader, Shake256};
+use sha3::{Shake256, Shake256Reader};
 
 use crate::primitives::Prime;
 use thiserror::Error;
 
 pub struct IntegerHasher {
-    reader: Sha3XofReader,
+    reader: Shake256Reader,
     result: Vec<u8>,
 }
 

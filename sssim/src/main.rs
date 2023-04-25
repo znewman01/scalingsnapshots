@@ -1,4 +1,3 @@
-#![feature(stdin_forwarders)]
 #![cfg_attr(feature = "strict", deny(warnings))]
 use std::collections::VecDeque;
 use std::fmt::Debug;
@@ -31,9 +30,6 @@ struct Args {
     /// Path to the database to use for results (sqlite3 format).
     #[clap(long)]
     results: PathBuf,
-    /// Name of the dataset
-    #[clap(long)]
-    dataset: Option<String>,
     /// Number of threads
     #[clap(long, default_value = "1")]
     threads: usize,
@@ -48,10 +44,11 @@ struct Event {
 fn create_tables(db: &Connection) -> rusqlite::Result<()> {
     db.execute(
         "CREATE TABLE IF NOT EXISTS overall_time (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
             runtime_ns INTEGER,
             technique  TEXT NOT NULL,
-            packages  INTEGER
+            packages   INTEGER,
+            cores      INTEGER
         )",
         [],
     )?;
@@ -63,8 +60,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              server_time_ns     INTEGER,
              server_state_bytes INTEGER,
              cdn_size_bytes     INTEGER,
-             cores              INTEGER,
-             dataset            TEXT
+             cores              INTEGER
         )",
         [],
     )?;
@@ -77,8 +73,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              server_state_bytes INTEGER,
              cdn_size_bytes     INTEGER,
              batch_size         INTEGER,
-             cores              INTEGER,
-             dataset            TEXT
+             cores              INTEGER
          )",
         [],
     )?;
@@ -91,8 +86,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
             cdn_size_bytes      INTEGER,
             merge_time          INTEGER,
             batch_size          INTEGER,
-            cores               INTEGER,
-            dataset             TEXT
+            cores               INTEGER
         )",
         [],
     )?;
@@ -103,7 +97,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              packages        INTEGER,
              user_time_ns    INTEGER,
              bandwidth_bytes INTEGER,
-             dataset         TEXT
+             cores           INTEGER
          )",
         [],
     )?;
@@ -116,7 +110,7 @@ fn create_tables(db: &Connection) -> rusqlite::Result<()> {
              user_time_ns       INTEGER,
              bandwidth_bytes    INTEGER,
              user_state_bytes   INTEGER,
-             dataset            TEXT
+             cores              INTEGER
          )",
         [],
     )?;
@@ -128,6 +122,7 @@ fn insert_overall_time(
     runtime: Duration,
     technique: &str,
     packages: usize,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let runtime_ns: u64 = runtime.whole_nanoseconds().try_into().unwrap();
     db.execute(
@@ -135,9 +130,10 @@ fn insert_overall_time(
         INSERT INTO overall_time (
             runtime_ns,
             technique,
-            packages
-        ) VALUES (?1, ?2, ?3) ",
-        rusqlite::params![runtime_ns, technique, packages],
+            packages,
+            cores
+        ) VALUES (?1, ?2, ?3, ?4) ",
+        rusqlite::params![runtime_ns, technique, packages, cores],
     )
 }
 
@@ -148,8 +144,7 @@ fn insert_precompute_result(
     time: Duration,
     server_state: Information,
     cdn_size: Information,
-    cores: u16,
-    dataset: &Option<String>,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
     let server_state_bytes: u64 = server_state.get::<byte>();
@@ -162,9 +157,8 @@ fn insert_precompute_result(
             server_time_ns,
             server_state_bytes,
             cdn_size_bytes,
-            cores,
-            dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7) ",
+            cores
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -172,7 +166,6 @@ fn insert_precompute_result(
             server_state_bytes,
             cdn_size_bytes,
             cores,
-            dataset
         ],
     )
 }
@@ -185,8 +178,7 @@ fn insert_update_result(
     server_state: Information,
     cdn_size: Information,
     batch_size: u16,
-    cores: u16,
-    dataset: &Option<String>,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
     let server_state_bytes = server_state.get::<byte>();
@@ -200,9 +192,8 @@ fn insert_update_result(
             server_state_bytes,
             cdn_size_bytes,
             batch_size,
-            cores,
-            dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8 ) ",
+            cores
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -211,7 +202,6 @@ fn insert_update_result(
             cdn_size_bytes,
             batch_size,
             cores,
-            dataset
         ],
     )
 }
@@ -224,8 +214,7 @@ fn insert_merge_result(
     cdn_size: Information,
     merge_time: Duration,
     batch_size: u16,
-    cores: u16,
-    dataset: &Option<String>,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let merge_time_ns: u64 = merge_time.whole_nanoseconds().try_into().unwrap();
     let server_state_bytes = server_state.get::<byte>();
@@ -239,9 +228,8 @@ fn insert_merge_result(
             merge_time,
             cdn_size_bytes,
             batch_size,
-            cores,
-            dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ",
+            cores
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -250,7 +238,6 @@ fn insert_merge_result(
             cdn_size_bytes,
             batch_size,
             cores,
-            dataset
         ],
     )
 }
@@ -263,7 +250,7 @@ fn insert_refresh_result(
     time: Duration,
     bandwidth: Information,
     user_state: Information,
-    dataset: &Option<String>,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
     let bandwidth_bytes: u64 = bandwidth.get::<byte>();
@@ -277,8 +264,8 @@ fn insert_refresh_result(
             user_time_ns,
             bandwidth_bytes,
             user_state_bytes,
-            dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7) ",
+            cores
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
         rusqlite::params![
             technique,
             packages,
@@ -286,7 +273,7 @@ fn insert_refresh_result(
             time_ns,
             bandwidth_bytes,
             user_state_bytes,
-            dataset
+            cores
         ],
     )
 }
@@ -295,8 +282,8 @@ fn batch_update_trials<A>(
     num_trials: u16,
     auth: &A,
     batch_size: u16,
-    dataset: &Option<String>,
     num_packages: usize,
+    cores: usize,
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
@@ -305,8 +292,6 @@ where
     println!("{num_trials} publish trials");
     for i in 0..num_trials {
         println!("trial {i}");
-        // TODO(must): don't hard code cores
-        let cores = 1;
         let mut auth = auth.clone();
         for b in 0..batch_size {
             let package_id = PackageId::from(format!("new_package{}", b));
@@ -323,7 +308,6 @@ where
                 cdn_size,
                 b + 1,
                 cores,
-                dataset,
             )?;
         }
 
@@ -340,7 +324,6 @@ where
             merge_time,
             batch_size,
             cores,
-            dataset,
         )?;
     }
     Ok(())
@@ -349,8 +332,8 @@ where
 fn update_trials<A>(
     num_trials: u16,
     auth: &A,
-    dataset: &Option<String>,
     num_packages: usize,
+    cores: usize,
     db: &Connection,
 ) -> rusqlite::Result<()>
 where
@@ -360,8 +343,6 @@ where
     for i in 0..num_trials {
         println!("trial {i}");
         let batch_size = 1;
-        // TODO(must): don't hard code cores
-        let cores = 1;
         let mut auth = auth.clone();
         let package_id = PackageId::from("new_package".to_string());
         let (update_time, _) = Duration::time_fn(|| {
@@ -378,7 +359,6 @@ where
             cdn_size,
             batch_size,
             cores,
-            dataset,
         )?;
     }
 
@@ -387,10 +367,10 @@ where
 
 fn precompute_trials<A>(
     num_trials: u16,
-    dataset: &Option<String>,
     num_packages: usize,
     db: &Connection,
     packages: &Vec<PackageId>,
+    cores: usize,
 ) -> rusqlite::Result<A>
 where
     A: Authenticator + Debug,
@@ -403,8 +383,6 @@ where
         let packages = packages.clone();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
         let cdn_size = inner_auth.cdn_size();
-        // TODO(must): don't hard code cores
-        let cores = 1;
         insert_precompute_result(
             db,
             A::name(),
@@ -413,7 +391,6 @@ where
             inner_auth.size(),
             cdn_size,
             cores,
-            dataset,
         )?;
         auth.replace(inner_auth);
     }
@@ -425,8 +402,8 @@ where
 fn create_user_state<A: Authenticator>(
     num_trials: u16,
     auth: &A,
-    dataset: &Option<String>,
     num_packages: usize,
+    cores: usize,
     db: &Connection,
 ) -> rusqlite::Result<A::ClientSnapshot> {
     let mut user_state_initial: Option<A::ClientSnapshot> = None;
@@ -442,7 +419,7 @@ fn create_user_state<A: Authenticator>(
             Duration::ZERO,
             user_state.size(),
             user_state.size(),
-            dataset,
+            cores,
         )?;
         user_state_initial.replace(user_state);
     }
@@ -453,13 +430,14 @@ fn create_user_state<A: Authenticator>(
 fn refresh_user_state<A: Authenticator + Clone>(
     refresh_trials: u16,
     auth_ref: &A,
-    dataset: &Option<String>,
     num_packages: usize,
     db: &Connection,
     user_state_initial: A::ClientSnapshot,
+    cores: usize,
 ) -> rusqlite::Result<()> {
     println!("refresh_user_state");
-    let mut elapsed_releases = VecDeque::from(vec![1, 10, 100, 1000]); // assume sorted
+    let mut elapsed_releases =
+        VecDeque::from(vec![100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]); // assume sorted
     let max_entry: usize =
         std::cmp::min(elapsed_releases[elapsed_releases.len() - 1], num_packages);
     let bar = ProgressBar::new(max_entry.try_into().unwrap());
@@ -467,7 +445,6 @@ fn refresh_user_state<A: Authenticator + Clone>(
     for idx in 0..=max_entry {
         bar.inc(1);
         if idx == elapsed_releases[0] {
-            println!("On {idx} releases");
             for _ in 0..refresh_trials {
                 let mut user_state = user_state_initial.clone();
                 let maybe_diff = auth.refresh_metadata(A::id(&user_state));
@@ -490,7 +467,7 @@ fn refresh_user_state<A: Authenticator + Clone>(
                     user_time,
                     bandwidth,
                     user_state.size(),
-                    dataset,
+                    cores,
                 )?;
             }
             elapsed_releases.pop_front();
@@ -500,6 +477,7 @@ fn refresh_user_state<A: Authenticator + Clone>(
         }
         let package = PackageId::from(format!("new_package{}", idx));
         auth.publish(package);
+        println!("{}, {:?}", idx, auth.size());
     }
     bar.finish();
     Ok(())
@@ -508,17 +486,17 @@ fn refresh_user_state<A: Authenticator + Clone>(
 fn download_trials<A>(
     download_trials: u16,
     auth: A,
-    dataset: &Option<String>,
     num_packages: usize,
     db: &Connection,
     packages: Vec<PackageId>,
+    cores: usize,
 ) -> rusqlite::Result<()>
 where
     A: Authenticator + Clone + Debug,
 {
     let mut rng = rand::thread_rng();
     println!("{download_trials} trials");
-    for i in 1..download_trials {
+    for i in 0..download_trials {
         println!("trial {i}");
         let mut auth = auth.clone();
         let user_state = auth.get_metadata();
@@ -530,7 +508,7 @@ where
         let (user_time, _) =
             Duration::time_fn(|| A::verify_membership(&user_state, &package, revision, proof));
 
-        insert_download_result(db, A::name(), num_packages, user_time, bandwidth, dataset)?;
+        insert_download_result(db, A::name(), num_packages, user_time, bandwidth, cores)?;
     }
 
     Ok(())
@@ -542,7 +520,7 @@ fn insert_download_result(
     packages: usize,
     time: Duration,
     bandwidth: Information,
-    dataset: &Option<String>,
+    cores: usize,
 ) -> rusqlite::Result<usize> {
     let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
     let bandwidth_bytes: u64 = bandwidth.get::<byte>();
@@ -553,89 +531,85 @@ fn insert_download_result(
             packages,
             user_time_ns,
             bandwidth_bytes,
-            dataset
-        ) VALUES ( ?1, ?2, ?3, ?4, ?5) ",
-        rusqlite::params![technique, packages, time_ns, bandwidth_bytes, dataset],
+            cores
+        ) VALUES ( ?1, ?2, ?3, ?4, ?5 ) ",
+        rusqlite::params![technique, packages, time_ns, bandwidth_bytes, cores],
     )
 }
 
-fn run<A>(
-    dataset: &Option<String>,
-    packages: Vec<PackageId>,
-    db: &Connection,
-) -> rusqlite::Result<()>
+fn run<A>(packages: Vec<PackageId>, db: &Connection, cores: usize) -> rusqlite::Result<()>
 where
     A: Authenticator + Clone + Debug,
 {
-    static PRECOMPUTE_TRIALS: u16 = 3;
-    static UPDATE_TRIALS: u16 = 3;
-    static REFRESH_TRIALS: u16 = 3;
-    static DOWNLOAD_TRIALS: u16 = 3;
+    static PRECOMPUTE_TRIALS: u16 = 1;
+    static UPDATE_TRIALS: u16 = 1;
+    static REFRESH_TRIALS: u16 = 1;
+    static DOWNLOAD_TRIALS: u16 = 1;
 
     let num_packages = packages.len();
 
     println!("precompute");
-    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
+    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, num_packages, db, &packages, cores)?;
 
     println!("update");
-    update_trials(UPDATE_TRIALS, &auth, dataset, num_packages, db)?;
+    update_trials(UPDATE_TRIALS, &auth, num_packages, cores, db)?;
 
     println!("refresh");
-    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
+    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
 
     refresh_user_state(
         REFRESH_TRIALS,
         &auth,
-        dataset,
         num_packages,
         db,
         user_state_initial,
+        cores,
     )?;
 
     println!("download");
-    download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
+    download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
 
     Ok(())
 }
 
 fn run_batch<A>(
-    dataset: &Option<String>,
     packages: Vec<PackageId>,
     db: &Connection,
     batch_sizes: Vec<u16>,
+    cores: usize,
 ) -> rusqlite::Result<()>
 where
     A: PoolAuthenticator + Clone + Debug,
 {
-    static PRECOMPUTE_TRIALS: u16 = 3;
-    static UPDATE_TRIALS: u16 = 3;
-    static REFRESH_TRIALS: u16 = 3;
-    static DOWNLOAD_TRIALS: u16 = 3;
+    static PRECOMPUTE_TRIALS: u16 = 1;
+    static UPDATE_TRIALS: u16 = 1;
+    static REFRESH_TRIALS: u16 = 1;
+    static DOWNLOAD_TRIALS: u16 = 1;
 
     let num_packages = packages.len();
 
     println!("precompute");
-    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, dataset, num_packages, db, &packages)?;
+    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, num_packages, db, &packages, cores)?;
 
     for batch_size in batch_sizes {
         print!("batch_size: {batch_size}\n");
-        batch_update_trials(UPDATE_TRIALS, &auth, batch_size, dataset, num_packages, db)?;
+        batch_update_trials(UPDATE_TRIALS, &auth, batch_size, num_packages, cores, db)?;
     }
 
     println!("refresh");
-    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, dataset, num_packages, db)?;
+    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
 
     refresh_user_state(
         REFRESH_TRIALS,
         &auth,
-        dataset,
         num_packages,
         db,
         user_state_initial,
+        cores,
     )?;
 
     println!("download");
-    download_trials(DOWNLOAD_TRIALS, auth, dataset, num_packages, db, packages)?;
+    download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
 
     Ok(())
 }
@@ -654,9 +628,7 @@ fn main() -> io::Result<()> {
             "insecure",
             "hackage",
             "mercury_diff",
-            "mercury_hash",
-            "mercury_hash_diff",
-            "merkle",
+            "sparse_merkle",
             "rsa",
             "rsa_pool",
             "mercury",
@@ -677,31 +649,35 @@ fn main() -> io::Result<()> {
 
         let packages = packages.clone();
         let package_len = packages.len();
-        let dataset = &args.dataset;
+        let batch_sizes = if args.threads == 1 {
+            vec![100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        } else {
+            vec![100]
+        };
         let (runtime, _) = Duration::time_fn(|| {
             match authenticator.as_str() {
-                "insecure" => run::<authenticator::Insecure>(dataset, packages, &db),
-                "hackage" => run::<authenticator::Hackage>(dataset, packages, &db),
-                "mercury_diff" => run::<authenticator::MercuryDiff>(dataset, packages, &db),
-                "mercury_hash" => run::<authenticator::MercuryHash>(dataset, packages, &db),
-                "mercury_hash_diff" => {
-                    run::<authenticator::MercuryHashDiff>(dataset, packages, &db)
-                }
-                "merkle" => run::<authenticator::Merkle>(dataset, packages, &db),
-                "rsa" => run::<authenticator::Rsa>(dataset, packages, &db),
+                "insecure" => run::<authenticator::Insecure>(packages, &db, args.threads),
+                "hackage" => run::<authenticator::Hackage>(packages, &db, args.threads),
+                "mercury_diff" => run::<authenticator::MercuryDiff>(packages, &db, args.threads),
+                "sparse_merkle" => run::<authenticator::SparseMerkle>(packages, &db, args.threads),
+                "rsa" => run::<authenticator::Rsa>(packages, &db, args.threads),
                 // TODO(must): try with different batch sizes
-                "rsa_pool" => run_batch::<authenticator::RsaPool>(
-                    dataset,
-                    packages,
-                    &db,
-                    vec![1, 10, 50, 100, 500],
-                ),
-                "mercury" => run::<authenticator::VanillaTuf>(dataset, packages, &db),
+                "rsa_pool" => {
+                    run_batch::<authenticator::RsaPool>(packages, &db, batch_sizes, args.threads)
+                }
+                "mercury" => run::<authenticator::VanillaTuf>(packages, &db, args.threads),
                 _ => panic!("not valid"),
             }
             .unwrap();
         });
-        insert_overall_time(&db, runtime, authenticator.as_str(), package_len);
+        insert_overall_time(
+            &db,
+            runtime,
+            authenticator.as_str(),
+            package_len,
+            args.threads,
+        )
+        .unwrap();
     }
 
     Ok(())

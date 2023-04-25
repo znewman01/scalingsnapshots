@@ -4,11 +4,9 @@ use crate::util::DataSized;
 use serde::Serialize;
 
 #[cfg(test)]
-use {proptest::prelude::*, proptest_derive::Arbitrary};
+use proptest_derive::Arbitrary;
 
-use crate::{
-    authenticator::Revision, log::PackageId, util::DataSizeFromSerialize, util::Information,
-};
+use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -18,9 +16,27 @@ pub struct Snapshot {
     high_water_mark: usize,
 }
 
-impl DataSizeFromSerialize for Snapshot {}
+impl DataSized for Snapshot {
+    fn size(&self) -> Information {
+        let mut size = Information::new::<byte>(8); // high_water_mark
+        let len: u64 = self.package_revisions.len().try_into().unwrap();
+        size += match self.package_revisions.iter().next() {
+            Some((k, v)) => (k.size() + v.size()) * len,
+            None => Information::new::<byte>(0),
+        };
+        size
+    }
+}
 
-impl DataSizeFromSerialize for Vec<(PackageId, Revision)> {}
+impl DataSized for Vec<(PackageId, Revision)> {
+    fn size(&self) -> Information {
+        let len: u64 = self.len().try_into().unwrap();
+        match self.iter().next() {
+            Some((k, v)) => (k.size() + v.size()) * len,
+            None => Information::new::<byte>(0),
+        }
+    }
+}
 
 /// A Hackage-style authenticator.
 ///
@@ -32,7 +48,17 @@ pub struct Authenticator {
     package_revisions: HashMap<PackageId, Revision>,
 }
 
-impl DataSizeFromSerialize for Authenticator {}
+impl DataSized for Authenticator {
+    fn size(&self) -> Information {
+        let mut size = self.log.size();
+        let len: u64 = self.package_revisions.len().try_into().unwrap();
+        size += match self.package_revisions.iter().next() {
+            Some((k, v)) => (k.size() + v.size()) * len,
+            None => Information::new::<byte>(0),
+        };
+        size
+    }
+}
 
 #[allow(unused_variables)]
 impl super::Authenticator for Authenticator {
