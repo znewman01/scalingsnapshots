@@ -70,11 +70,8 @@ where
 
 impl<G: Group + 'static> NonMembershipWitness<G> {
     fn update(&mut self, value: &Prime, new_element: Prime, digest: G) {
-        // check that c^a * d^x = g
-        debug_assert_eq!(
-            &((digest.clone() * &self.exp) + (self.base.clone() * value.inner())),
-            G::one(),
-            "precondition",
+        debug_assert!(
+            RsaAccumulatorDigest::from(digest.clone()).verify_nonmember(value, self.clone())
         );
 
         // If we're adding another copy of *this* value to the accumulator, no
@@ -88,21 +85,17 @@ impl<G: Group + 'static> NonMembershipWitness<G> {
         let (gcd, s, t) = Integer::extended_gcd_ref(value.inner(), new_element.borrow()).into();
         debug_assert_eq!(gcd, 1u8);
 
-        let (q, r) = (self.exp.clone() * t).div_rem_ref(value.inner()).complete();
+        let (q, r) = (&self.exp * t).div_rem_ref(value.inner()).complete();
         let new_exp = r;
 
         let mut new_base = self.base.clone();
-        let x: Integer = q * Into::<Integer>::into(new_element.clone()) + self.exp.clone() * s;
-        new_base += digest.clone() * &x;
-
-        let c_hat = digest * new_element.borrow();
-        debug_assert_eq!(
-            &(c_hat * &new_exp + new_base.clone() * value.inner()),
-            G::one(),
-        );
+        new_base += digest.clone() * &(q * new_element.inner() + self.exp.clone() * s);
 
         self.exp = new_exp;
         self.base = new_base;
+
+        debug_assert!(RsaAccumulatorDigest::from(digest * new_element.borrow())
+            .verify_nonmember(value, self.clone()));
     }
 }
 
@@ -383,8 +376,6 @@ where
     }
 }
 
-static PRECOMPUTE_CHUNK_SIZE: usize = 4;
-
 /// returns (Vec<Witness>, digest, exponent)
 fn precompute_helper<G: Group + 'static>(
     values: &[Prime],
@@ -504,31 +495,8 @@ fn precompute_helper<G: Group + 'static>(
 
     bar.inc(values.len().try_into().unwrap());
 
-    let (mut ret, r_ret) = if values.len() >= PRECOMPUTE_CHUNK_SIZE {
-        rayon::join(
-            || {
-                precompute_helper(
-                    &values[..split_idx],
-                    &counts[..split_idx],
-                    proof_left,
-                    g_right,
-                    bar,
-                )
-                .0
-            },
-            || {
-                precompute_helper(
-                    &values[split_idx..],
-                    &counts[split_idx..],
-                    proof_right,
-                    g_left,
-                    bar,
-                )
-                .0
-            },
-        )
-    } else {
-        (
+    let (mut ret, r_ret) = rayon::join(
+        || {
             precompute_helper(
                 &values[..split_idx],
                 &counts[..split_idx],
@@ -536,7 +504,9 @@ fn precompute_helper<G: Group + 'static>(
                 g_right,
                 bar,
             )
-            .0,
+            .0
+        },
+        || {
             precompute_helper(
                 &values[split_idx..],
                 &counts[split_idx..],
@@ -544,9 +514,9 @@ fn precompute_helper<G: Group + 'static>(
                 g_left,
                 bar,
             )
-            .0,
-        )
-    };
+            .0
+        },
+    );
     ret.extend_from_slice(&r_ret);
     (ret, g_star, members_star)
 }

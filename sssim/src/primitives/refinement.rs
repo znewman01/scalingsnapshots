@@ -92,8 +92,8 @@ impl TryFrom<Integer> for PositiveInteger {
         use std::cmp::Ordering::*;
         match value.cmp(&Integer::ZERO) {
             Less => Err(Error::Negative(value)),
-            Equal => Ok(PositiveInteger { value }),
-            Greater => Err(Error::Zero),
+            Equal => Err(Error::Zero),
+            Greater => Ok(PositiveInteger { value }),
         }
     }
 }

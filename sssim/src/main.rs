@@ -53,6 +53,7 @@ fn duration_to_ns(duration: Duration) -> u64 {
     duration.whole_nanoseconds().try_into().unwrap()
 }
 
+#[derive(Debug)]
 struct OverallTimeResult {
     runtime: Duration,
     packages: usize,
@@ -64,6 +65,7 @@ impl Table for OverallTimeResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS overall_time (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            technique  TEXT,
             runtime_ns INTEGER,
             packages   INTEGER,
             cores      INTEGER
@@ -101,6 +103,7 @@ impl Table for PrecomputeResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS precompute_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             technique          TEXT,
              packages           INTEGER,
              server_time_ns     INTEGER,
              server_state_bytes INTEGER,
@@ -149,6 +152,7 @@ impl Table for UpdateResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS update_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             technique          TEXT,
              packages           INTEGER,
              server_time_ns     INTEGER,
              server_state_bytes INTEGER,
@@ -200,6 +204,7 @@ impl Table for MergeResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS merge_results (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            technique           TEXT,
             packages            INTEGER,
             server_state_bytes  INTEGER,
             cdn_size_bytes      INTEGER,
@@ -251,6 +256,7 @@ impl Table for RefreshResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS refresh_results (
              id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             technique          TEXT,
              packages           INTEGER,
              elapsed_releases   INTEGER, -- null => initial refresh
              user_time_ns       INTEGER,
@@ -480,7 +486,6 @@ fn refresh_user_state<A: Authenticator + Clone>(
         }
         let package = PackageId::from(format!("new_package{idx}"));
         auth.publish(package);
-        println!("{idx}, {:?}", auth.size());
     }
     bar.finish();
     Ok(())
@@ -535,6 +540,7 @@ impl Table for DownloadResult {
         db.execute(
             "CREATE TABLE IF NOT EXISTS download_results (
              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+             technique       TEXT,
              packages        INTEGER,
              user_time_ns    INTEGER,
              bandwidth_bytes INTEGER,
@@ -710,6 +716,7 @@ fn main() -> io::Result<()> {
             _ => panic!("not valid"),
         }
         .unwrap();
+        dbg!(&result);
         match authenticator.as_str() {
             "insecure" => result.insert::<authenticator::Insecure>(&db),
             "hackage" => result.insert::<authenticator::Hackage>(&db),
