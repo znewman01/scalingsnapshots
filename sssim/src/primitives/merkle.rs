@@ -135,13 +135,7 @@ impl<H: Hasher> InteriorData<H> {
         Self { left, right }
     }
 
-    fn into_child(self, direction: Direction) -> Box<Node<H>> {
-        match direction {
-            Left => self.left,
-            Right => self.right,
-        }
-    }
-
+    #[allow(clippy::borrowed_box)]
     fn child(&self, direction: Direction) -> &Box<Node<H>> {
         match direction {
             Left => &self.left,
@@ -423,8 +417,8 @@ where
                         Member(self.values.get(key).expect("found!"))
                     } else {
                         NonMemberLeaf {
-                            leaf_index: data.key_index.clone(),
-                            value_hash: data.value_hash.clone(),
+                            leaf_index: data.key_index,
+                            value_hash: data.value_hash,
                         }
                     };
                     return Proof {

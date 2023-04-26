@@ -22,7 +22,7 @@ pub fn mask<N: ArrayLength<u8>>(data: &GenericArray<u8, N>, bits: usize) -> Gene
 
 pub fn get_bit_i(data: &[u8], bit: usize) -> bool {
     let byte: u8 = data[bit / 8];
-    return byte & (1u8 << (7 - bit % 8)) != 0;
+    byte & (1u8 << (7 - bit % 8)) != 0
 }
 
 pub fn set_bit_i(data: &mut [u8], bit: usize, value: bool) {
@@ -48,7 +48,7 @@ pub fn shared_prefix_length<N: ArrayLength<u8>>(
             return i;
         }
     }
-    return total_bits;
+    total_bits
 }
 
 #[cfg(test)]

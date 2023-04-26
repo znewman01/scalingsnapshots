@@ -2,8 +2,8 @@
 use crate::accumulator::{Accumulator, BatchAccumulator};
 use crate::poke;
 use crate::primitives::{Collector, Group, PositiveInteger, Prime, SkipList};
-use crate::util::byte;
-use crate::util::DataSized;
+use crate::util::assume_data_size_for_map;
+use crate::util::{assume_data_size_for_vec, DataSized};
 use crate::{multiset::MultiSet, util::Information};
 use rayon::prelude::*;
 use rug::Complete;
@@ -11,6 +11,7 @@ use rug::{ops::Pow, Integer};
 use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use uom::ConstZero;
 
 use indicatif::ProgressBar;
 
@@ -23,7 +24,7 @@ impl<G> DataSized for RsaAccumulatorDigest<G>
 where
     G: DataSized,
 {
-    fn size(&self) -> crate::util::Information {
+    fn size(&self) -> Information {
         self.value.size()
     }
 }
@@ -92,11 +93,11 @@ impl<G: Group + 'static> NonMembershipWitness<G> {
 
         let mut new_base = self.base.clone();
         let x: Integer = q * Into::<Integer>::into(new_element.clone()) + self.exp.clone() * s;
-        new_base = new_base + digest.clone() * &x;
+        new_base += digest.clone() * &x;
 
-        let c_hat = digest.clone() * new_element.borrow();
+        let c_hat = digest * new_element.borrow();
         debug_assert_eq!(
-            &(c_hat.clone() * &new_exp + new_base.clone() * value.inner()),
+            &(c_hat * &new_exp + new_base.clone() * value.inner()),
             G::one(),
         );
 
@@ -165,13 +166,8 @@ where
     G: DataSized,
     poke::Proof<G>: DataSized,
 {
-    fn size(&self) -> crate::util::Information {
-        let mut size = uom::ConstZero::ZERO;
-        if self.inner.len() > 0 {
-            size += u64::try_from(self.inner.len()).unwrap() * self.inner[0].0.size();
-            size += u64::try_from(self.inner.len()).unwrap() * self.inner[0].1.size();
-        }
-        return size;
+    fn size(&self) -> Information {
+        assume_data_size_for_vec(&self.inner)
     }
 }
 
@@ -182,26 +178,7 @@ pub struct BatchWitness<W> {
 
 impl<W: DataSized> DataSized for BatchWitness<W> {
     fn size(&self) -> Information {
-        if self.inner.len() > 0 {
-            let key = self.inner.keys().next().expect("hashmap not empty");
-            let value = self.inner.get(key).expect("hashmap not empty");
-            let len: u64 = self.inner.len().try_into().unwrap();
-            return len * (key.size() + value.size());
-        }
-        return uom::ConstZero::ZERO;
-    }
-}
-
-impl<G> DataSized for HashMap<Prime, Witness<G>>
-where
-    Witness<G>: DataSized,
-{
-    fn size(&self) -> Information {
-        let len: u64 = self.len().try_into().unwrap();
-        match self.iter().next() {
-            None => Information::new::<byte>(0),
-            Some((k, v)) => (k.size() + v.size()) * len,
-        }
+        assume_data_size_for_map(&self.inner)
     }
 }
 
@@ -246,7 +223,7 @@ where
 
         self.proof_cache.par_iter_mut().for_each(|(value, proof)| {
             let digest = proof.member.clone().unwrap().0;
-            proof.nonmember.update(&value, exponent.clone(), digest);
+            proof.nonmember.update(value, exponent.clone(), digest);
             // for all members that equal value: divide by member
             let update_val = match members_hashmap.get(value) {
                 Some(count) => Prime::new_unchecked(
@@ -265,9 +242,9 @@ where
                 let mut nonmember_proof = self
                     .nonmember_proof_cache
                     .remove(member)
-                    .unwrap_or_else(|| self.prove_nonmember_uncached(&member).unwrap());
+                    .unwrap_or_else(|| self.prove_nonmember_uncached(member).unwrap());
                 nonmember_proof.update(
-                    &member,
+                    member,
                     Prime::new_unchecked(exponent),
                     membership_proof.clone().0.clone(),
                 );
@@ -321,7 +298,7 @@ where
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
@@ -366,7 +343,7 @@ impl<G> DataSized for HistoryEntry<G>
 where
     RsaAccumulatorDigest<G>: DataSized,
 {
-    fn size(&self) -> crate::util::Information {
+    fn size(&self) -> Information {
         self.exponent.size() + self.end_digest.size()
     }
 }
@@ -396,33 +373,12 @@ where
     Witness<G>: DataSized,
     NonMembershipWitness<G>: DataSized,
 {
-    fn size(&self) -> crate::util::Information {
+    fn size(&self) -> Information {
         let mut size = self.digest.size() + self.history.size() + self.exponent.size();
-        let multi_len: u64 = self.multiset.len().try_into().unwrap();
-        size += multi_len * Information::new::<byte>(4);
-        if self.proof_cache.len() > 0 {
-            let item = self.proof_cache.keys().next();
-            let val = self.proof_cache.values().next();
-            let len: u64 = self.proof_cache.len().try_into().unwrap();
-            size +=
-                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
-        }
-
-        if self.nonmember_proof_cache.len() > 0 {
-            let item = self.nonmember_proof_cache.keys().next();
-            let val = self.nonmember_proof_cache.values().next();
-            let len: u64 = self.nonmember_proof_cache.len().try_into().unwrap();
-            size +=
-                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
-        }
-
-        if self.digests_to_indexes.len() > 0 {
-            let item = self.digests_to_indexes.keys().next();
-            let val = self.proof_cache.values().next();
-            let len: u64 = self.digests_to_indexes.len().try_into().unwrap();
-            size +=
-                (item.expect("map not empty").size() + val.expect("map not empty").size()) * len;
-        }
+        size += self.multiset.size();
+        size += assume_data_size_for_map(&self.proof_cache);
+        size += assume_data_size_for_map(&self.nonmember_proof_cache);
+        size += assume_data_size_for_map(&self.digests_to_indexes);
         size
     }
 }
@@ -438,9 +394,7 @@ fn precompute_helper<G: Group + 'static>(
     bar: &ProgressBar,
 ) -> (Vec<Witness<G>>, G, Integer) {
     debug_assert_eq!(values.len(), counts.len());
-    if values.len() == 0 {
-        panic!("slice len should not be 0");
-    }
+    debug_assert!(!values.is_empty());
     if values.len() == 1 {
         debug_assert!(
             RsaAccumulatorDigest::from(g.clone()).verify_nonmember(&values[0], proof.clone())
@@ -502,11 +456,11 @@ fn precompute_helper<G: Group + 'static>(
     let (gcd, s, t) =
         Integer::extended_gcd(values_left.clone(), members_right.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
-    let at = proof.exp.clone() * t.clone();
+    let at = proof.exp.clone() * t;
     // reduce a * t mod e_left
-    let (q, r) = at.clone().div_rem(values_left.clone());
+    let (q, r) = at.div_rem(values_left.clone());
     let mut b_left = g.clone() * &(q * members_right.clone());
-    b_left += g.clone() * &(proof.exp.clone() * s.clone());
+    b_left += g.clone() * &(proof.exp.clone() * s);
     b_left += proof.base.clone() * &values_right;
     let proof_left = NonMembershipWitness {
         exp: r,
@@ -517,12 +471,12 @@ fn precompute_helper<G: Group + 'static>(
     let (gcd, s, t) =
         Integer::extended_gcd(values_right.clone(), members_left.clone(), Integer::new());
     debug_assert_eq!(gcd, 1u8);
-    let at = proof.exp.clone() * t.clone();
+    let at = proof.exp.clone() * t;
     // reduce a * t mod e_right
-    let (q, r) = at.clone().div_rem(values_right.clone());
+    let (q, r) = at.div_rem(values_right.clone());
     let mut b_right = g.clone() * &(q * members_left.clone());
-    b_right += g.clone() * &(proof.exp.clone() * s.clone());
-    b_right += proof.base.clone() * &values_left;
+    b_right += g.clone() * &(proof.exp.clone() * s);
+    b_right += proof.base * &values_left;
     let proof_right = NonMembershipWitness {
         exp: r,
         base: b_right,
@@ -536,7 +490,7 @@ fn precompute_helper<G: Group + 'static>(
     debug_assert!(RsaAccumulatorDigest::from(g_right.clone()).verify_member(
         &Prime::new_unchecked(members_right),
         1,
-        MembershipWitness(g.clone())
+        MembershipWitness(g)
     ));
     debug_assert!(RsaAccumulatorDigest::from(g_right.clone())
         .verify_nonmember(&Prime::new_unchecked(values_left), proof_left.clone()));
@@ -544,7 +498,7 @@ fn precompute_helper<G: Group + 'static>(
         .verify_nonmember(&Prime::new_unchecked(values_right), proof_right.clone()));
 
     debug_assert_eq!(
-        (&values[..split_idx]).len() + (&values[split_idx..]).len(),
+        (values[..split_idx]).len() + (values[split_idx..]).len(),
         values.len()
     );
 
@@ -693,7 +647,7 @@ where
 
         // We need to update every membership proof, *except* our own!
         self.proof_cache.par_iter_mut().for_each(|(value, proof)| {
-            let digest = proof.member.clone().unwrap().0.clone();
+            let digest = proof.member.clone().unwrap().0;
             proof.nonmember.update(value, member.clone(), digest);
             if value == &member {
                 return;
@@ -804,7 +758,7 @@ where
         digests_to_indexes.insert(digest.clone(), 0);
         debug_assert_eq!(digest.value, G::one().clone() * &exponent);
         Self {
-            digest: digest.clone(),
+            digest,
             multiset,
             proof_cache,
             nonmember_proof_cache: Default::default(),
@@ -860,7 +814,7 @@ where
     }
 
     fn cdn_size(&self) -> Information {
-        let mut size = uom::ConstZero::ZERO;
+        let mut size = Information::ZERO;
         for (key, value) in &self.nonmember_proof_cache {
             size += key.size();
             size += value.size();

@@ -1,4 +1,4 @@
-use crate::util::DataSized;
+use crate::util::{DataSized, FixedDataSized};
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -20,9 +20,9 @@ impl From<Revision> for Metadata {
     }
 }
 
-impl DataSized for Metadata {
-    fn size(&self) -> Information {
-        self.revision.size()
+impl FixedDataSized for Metadata {
+    fn fixed_size() -> Information {
+        Revision::fixed_size()
     }
 }
 
@@ -36,13 +36,7 @@ pub struct Snapshot {
 
 impl DataSized for Snapshot {
     fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(8); // id
-        let len: u64 = self.packages.len().try_into().unwrap();
-        size += match self.packages.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        };
-        size
+        self.id.size() + self.packages.size()
     }
 }
 
@@ -163,7 +157,7 @@ impl super::Authenticator for Authenticator {
 
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
         for (package_id, metadata) in &diff.packages {
-            if let Some(old_metadata) = snapshot.packages.get(&package_id) {
+            if let Some(old_metadata) = snapshot.packages.get(package_id) {
                 if metadata.revision < old_metadata.revision {
                     return false;
                 }

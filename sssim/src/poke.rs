@@ -97,7 +97,7 @@ impl<G: Group + TryFrom<Integer> + 'static> ZKUniverse<G> {
         let alpha = self.fiat_shamir3(&instance, &g, &z, &ell);
 
         // Prover finds the quotient q and residue r < ell such that x = ql + r.
-        let (q, r) = Integer::from(x).div_rem(ell.into_inner());
+        let (q, r) = x.div_rem(ell.into_inner());
 
         // Prover sends Q = u^q g^(alpha q) and r to the Verifier
         let Q = u * &q + g * &(alpha * q);

@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use crate::util::DataSized;
+use crate::util::{DataSized, FixedDataSized};
 use serde::Serialize;
 
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
+use crate::{authenticator::Revision, log::PackageId, util::Information};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
@@ -18,23 +18,16 @@ pub struct Snapshot {
 
 impl DataSized for Snapshot {
     fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(8); // high_water_mark
-        let len: u64 = self.package_revisions.len().try_into().unwrap();
-        size += match self.package_revisions.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        };
-        size
+        self.high_water_mark.size() + self.package_revisions.size()
     }
 }
 
-impl DataSized for Vec<(PackageId, Revision)> {
+#[derive(Clone, Default, Debug, Serialize)]
+pub struct Log(Vec<(PackageId, Revision)>);
+
+impl DataSized for Log {
     fn size(&self) -> Information {
-        let len: u64 = self.len().try_into().unwrap();
-        match self.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        }
+        self.0.len() * (PackageId::fixed_size() + Revision::fixed_size())
     }
 }
 
@@ -44,19 +37,13 @@ impl DataSized for Vec<(PackageId, Revision)> {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
-    log: Vec<(PackageId, Revision)>,
+    log: Log,
     package_revisions: HashMap<PackageId, Revision>,
 }
 
 impl DataSized for Authenticator {
     fn size(&self) -> Information {
-        let mut size = self.log.size();
-        let len: u64 = self.package_revisions.len().try_into().unwrap();
-        size += match self.package_revisions.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        };
-        size
+        self.log.size() + self.package_revisions.size()
     }
 }
 
@@ -64,7 +51,7 @@ impl DataSized for Authenticator {
 impl super::Authenticator for Authenticator {
     type ClientSnapshot = Snapshot;
     type Id = usize;
-    type Diff = Vec<(PackageId, Revision)>;
+    type Diff = Log;
     type Proof = ();
 
     fn name() -> &'static str {
@@ -80,14 +67,14 @@ impl super::Authenticator for Authenticator {
     }
 
     fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
-        let diff_len = match self.log.len().checked_sub(snapshot_id) {
+        let diff_len = match self.log.0.len().checked_sub(snapshot_id) {
             Some(len) => len,
             None => return None, // snapshot_id is in the future!
         };
 
         let mut diff = Vec::new();
-        diff.extend_from_slice(&self.log[snapshot_id..]);
-        Some(diff)
+        diff.extend_from_slice(&self.log.0[snapshot_id..]);
+        Some(Log(diff))
     }
 
     fn publish(&mut self, package: PackageId) {
@@ -96,7 +83,7 @@ impl super::Authenticator for Authenticator {
             .entry(package.clone())
             .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
             .or_insert_with(Revision::default);
-        self.log.push((package, *revision));
+        self.log.0.push((package, *revision));
     }
 
     fn request_file(
@@ -114,7 +101,7 @@ impl super::Authenticator for Authenticator {
     fn get_metadata(&self) -> Snapshot {
         Snapshot {
             package_revisions: self.package_revisions.clone(),
-            high_water_mark: self.log.len(),
+            high_water_mark: self.log.0.len(),
         }
     }
 
@@ -123,15 +110,15 @@ impl super::Authenticator for Authenticator {
     }
 
     fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
-        snapshot.high_water_mark += diff.len();
-        for (package_id, new_revision) in diff.into_iter() {
+        snapshot.high_water_mark += diff.0.len();
+        for (package_id, new_revision) in diff.0.into_iter() {
             snapshot.package_revisions.insert(package_id, new_revision);
         }
     }
 
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
         // TODO(maybe): combine with update
-        for (package_id, new_revision) in diff.iter() {
+        for (package_id, new_revision) in diff.0.iter() {
             let result = snapshot.package_revisions.get(package_id);
             if matches!(result, Some(old_revision) if old_revision > new_revision) {
                 return false;

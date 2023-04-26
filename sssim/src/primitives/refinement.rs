@@ -89,12 +89,12 @@ impl TryFrom<Integer> for PositiveInteger {
     type Error = Error;
 
     fn try_from(value: Integer) -> Result<Self, Self::Error> {
-        if value == 0 {
-            return Err(Error::Zero);
-        } else if value < 0 {
-            return Err(Error::Negative(value));
+        use std::cmp::Ordering::*;
+        match value.cmp(&Integer::ZERO) {
+            Less => Err(Error::Negative(value)),
+            Equal => Ok(PositiveInteger { value }),
+            Greater => Err(Error::Zero),
         }
-        Ok(PositiveInteger { value })
     }
 }
 

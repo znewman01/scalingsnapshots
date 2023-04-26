@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::util::DataSized;
 
-use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
+use crate::{authenticator::Revision, log::PackageId, util::Information};
 
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Default, Clone, Debug, Serialize)]
@@ -23,13 +23,7 @@ pub struct Snapshot {
 
 impl DataSized for Snapshot {
     fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(8); // id
-        let len: u64 = self.packages.len().try_into().unwrap();
-        size += match self.packages.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        };
-        size
+        self.packages.size() + self.id.size()
     }
 }
 

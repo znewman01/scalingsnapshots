@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use crate::log::{Action, Package, PackageId, UserId};
 use crate::util::DataSized;
+use crate::util::Information;
 use crate::Authenticator;
 use serde::{Serialize, Serializer};
 use time::Duration;
-use uom::si::u64::Information;
 use uom::ConstZero;
 
 fn serialize_ns<S>(duration: &Duration, s: S) -> Result<S::Ok, S::Error>
@@ -68,12 +68,12 @@ where
         let user_snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
         let (server_request_time, (revision, proof)) = Duration::time_fn(|| {
             self.authenticator
-                .request_file(A::id(&user_snapshot), &package.id)
+                .request_file(A::id(user_snapshot), &package.id)
         });
         let bandwidth = proof.size();
         let (user_verify_time, _) = Duration::time_fn(|| {
             assert!(A::verify_membership(
-                &user_snapshot,
+                user_snapshot,
                 &package.id,
                 revision,
                 proof
@@ -90,11 +90,11 @@ where
 
     fn process_refresh_metadata(&mut self, user: UserId) -> ResourceUsage {
         // Get the snapshot ID for the user's current snapshot.
-        let mut snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
+        let snapshot = self.snapshots.entry(user).or_insert_with(Default::default);
 
         // Answer the update metadata server-side.
         let (server_compute, maybe_snapshot_diff) =
-            Duration::time_fn(|| self.authenticator.refresh_metadata(A::id(&snapshot)));
+            Duration::time_fn(|| self.authenticator.refresh_metadata(A::id(snapshot)));
 
         let snapshot_size = maybe_snapshot_diff
             .as_ref()
@@ -104,10 +104,10 @@ where
         let user_compute = if let Some(snapshot_diff) = maybe_snapshot_diff {
             // Check the new snapshot for rollbacks and store it.
             let (user_compute_verify, _) = Duration::time_fn(|| {
-                assert!(A::check_no_rollback(&snapshot, &snapshot_diff));
+                assert!(A::check_no_rollback(snapshot, &snapshot_diff));
             });
             let (user_compute_update, _) = Duration::time_fn(|| {
-                A::update(&mut snapshot, snapshot_diff);
+                A::update(snapshot, snapshot_diff);
             });
             user_compute_verify + user_compute_update
         } else {

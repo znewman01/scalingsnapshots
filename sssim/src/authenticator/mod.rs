@@ -1,7 +1,7 @@
 mod hackage;
 mod insecure;
 mod mercury_diff;
-// mod merkle;
+//. mod merkle;
 mod rsa;
 mod sparse_merkle;
 mod vanilla_tuf;
@@ -13,7 +13,10 @@ use std::{
 
 use serde::Serialize;
 
-use crate::{accumulator::rsa::RsaAccumulator, util::Information};
+use crate::{
+    accumulator::rsa::RsaAccumulator,
+    util::{FixedDataSized, Information},
+};
 
 use crate::primitives::RsaGroup;
 pub use hackage::Authenticator as Hackage;
@@ -34,9 +37,9 @@ use {proptest::prelude::*, proptest_derive::Arbitrary};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Revision(pub NonZeroU64);
 
-impl DataSized for Revision {
-    fn size(&self) -> Information {
-        return Information::new::<byte>(8);
+impl FixedDataSized for Revision {
+    fn fixed_size() -> Information {
+        Information::new::<byte>(8)
     }
 }
 

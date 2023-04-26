@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::util::{byte, DataSized, Information};
+use crate::util::{byte, FixedDataSized, Information};
 
 format_description!(
     simple_dt_8601,
@@ -40,9 +40,10 @@ impl From<String> for UserId {
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PackageId(pub String);
 
-impl DataSized for PackageId {
-    fn size(&self) -> Information {
-        Information::new::<byte>(self.0.len().try_into().unwrap())
+impl FixedDataSized for PackageId {
+    fn fixed_size() -> Information {
+        // assumed average size of all package name strings
+        Information::new::<byte>(12)
     }
 }
 

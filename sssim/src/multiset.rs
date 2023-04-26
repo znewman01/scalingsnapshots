@@ -5,6 +5,8 @@ use std::{collections::HashMap, hash::Hash};
 use rug::Integer;
 use serde::{ser::SerializeMap, Serialize};
 
+use crate::util::{assume_data_size_for_map, DataSized};
+
 #[derive(Debug, Clone)]
 pub struct MultiSet<T: Hash + Eq> {
     pub inner: HashMap<T, u32>,
@@ -28,6 +30,12 @@ impl Serialize for MultiSet<Integer> {
             map.serialize_entry(&k.to_string(), v)?;
         }
         map.end()
+    }
+}
+
+impl<T: DataSized + Hash + Eq> DataSized for MultiSet<T> {
+    fn size(&self) -> crate::util::Information {
+        assume_data_size_for_map(&self.inner)
     }
 }
 
@@ -60,7 +68,7 @@ impl<T: Hash + Eq> MultiSet<T> {
         self.inner.remove(member)
     }
 
-    pub fn iter<'a>(&'a self) -> impl std::iter::Iterator<Item = (&'a T, &u32)> {
+    pub fn iter(&self) -> impl std::iter::Iterator<Item = (&T, &u32)> {
         self.inner.iter()
     }
 
@@ -86,7 +94,11 @@ impl<T: Hash + Eq> MultiSet<T> {
     }
 
     pub fn len(&self) -> usize {
-        return self.inner.len();
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 

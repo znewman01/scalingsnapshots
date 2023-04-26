@@ -1,3 +1,4 @@
+use crate::util::{byte, Information};
 use digest::Digest;
 use serde::{Serialize, Serializer};
 use sha3::Sha3_256;
@@ -8,14 +9,11 @@ use smtree::proof::MerkleProof;
 use smtree::traits::{InclusionProvable, ProofExtractable};
 use smtree::tree::SparseMerkleTree;
 use std::collections::HashMap;
-use uom::si::information::byte;
-use uom::si::u64::Information;
 use uom::ConstZero;
 
 use authenticator::Revision;
 
-use crate::util::STRING_BYTES;
-
+use crate::util::FixedDataSized;
 use crate::{authenticator, log::PackageId, util::DataSized};
 
 static TREE_HEIGHT: usize = 256;
@@ -39,7 +37,7 @@ pub struct Snapshot {
 
 impl DataSized for Snapshot {
     fn size(&self) -> crate::util::Information {
-        Information::new::<byte>(Sha3_256::output_size().try_into().unwrap())
+        Information::new::<byte>(Sha3_256::output_size())
     }
 }
 
@@ -56,12 +54,11 @@ pub struct Proof {
 }
 
 impl DataSized for Proof {
-    fn size(&self) -> crate::util::Information {
-        let siblings_size: u64 = (self.inner.get_path_siblings().len() * Sha3_256::output_size())
-            .try_into()
-            .unwrap();
-        let indexes_size: u64 = (self.inner.get_indexes().len() * 40).try_into().unwrap(); // each index has a usize and 32 u8s
-        Information::new::<byte>(siblings_size + indexes_size)
+    fn size(&self) -> Information {
+        let siblings_size = self.inner.get_path_siblings().len()
+            * Information::new::<byte>(Sha3_256::output_size());
+        let indexes_size = self.inner.get_indexes().len() * Information::new::<byte>(40); // each index has a usize and 32 u8s
+        siblings_size + indexes_size
     }
 }
 
@@ -196,16 +193,13 @@ impl super::Authenticator for Authenticator {
     }
 
     fn cdn_size(&self) -> Information {
-        let leaf_size = 16 + 8 + STRING_BYTES + 3 * 8;
-        let internal_size = 16 + 3 * 8;
+        let hash_size = Information::new::<byte>(32);
+        let leaf_size = PackageId::fixed_size() + usize::fixed_size() + hash_size;
+        let internal_size = 3 * usize::fixed_size() + hash_size;
         let num_leaves = self.tree.get_leaves().len();
 
-        // assume worst case: all internal nodes, no padding
-        Information::new::<byte>(
-            (num_leaves * leaf_size + self.tree.get_nodes_num() * internal_size)
-                .try_into()
-                .unwrap(),
-        )
+        // assume worst case: all possible internal nodes, no padding
+        leaf_size * num_leaves + internal_size * self.tree.get_nodes_num()
     }
 }
 
@@ -225,8 +219,7 @@ impl DataSized for Authenticator {
             self.tree.get_internals().into_iter(),
             self.tree.get_paddings().into_iter(),
         ) {
-            let len: u64 = Sha3_256::output_size().try_into().unwrap();
-            tree_size += Information::new::<byte>(len);
+            tree_size += Information::new::<byte>(Sha3_256::output_size());
         }
 
         snapshot_size + tree_size

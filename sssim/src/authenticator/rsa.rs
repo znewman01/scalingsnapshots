@@ -7,7 +7,7 @@ use crate::{
     hash_to_prime::hash_to_prime,
     multiset::MultiSet,
     primitives::Prime,
-    util::{byte, DataSized, Information, STRING_BYTES},
+    util::{assume_data_size_for_map, assume_data_size_for_vec, DataSized, Information},
 };
 
 use authenticator::Revision;
@@ -178,7 +178,7 @@ where
         snapshot_id: Self::Id,
         package: &PackageId,
     ) -> (Revision, Self::Proof) {
-        let prime = hash_package(&package);
+        let prime = hash_package(package);
 
         let revision = self.acc.get(&prime);
         let proof = self.acc.prove(&prime, revision).expect("proof failed");
@@ -205,7 +205,7 @@ where
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
         let (new_digest, proof) = (&diff.digest, &diff.update);
         match (proof, snapshot.digest.as_ref()) {
-            (Some(p), Some(s)) => A::verify_append_only(s, &p, &new_digest),
+            (Some(p), Some(s)) => A::verify_append_only(s, p, new_digest),
             (Some(_), None) => panic!("Weird combination of proof and no state"),
             (None, None) => true,
             (None, Some(_)) => false,
@@ -222,7 +222,7 @@ where
         let prime = hash_to_prime(&encoded).unwrap();
         match &snapshot.digest {
             None => false,
-            Some(d) => A::verify(&d, &prime, revision.0.get().try_into().unwrap(), proof),
+            Some(d) => A::verify(d, &prime, revision.0.get().try_into().unwrap(), proof),
         }
     }
 
@@ -238,16 +238,8 @@ where
 {
     fn size(&self) -> Information {
         let mut size = self.acc.size();
-        let len: u64 = self.log.len().try_into().unwrap();
-        size += len * Information::new::<byte>(32);
-
-        if self.old_acc_idxs.len() > 0 {
-            let item = self.old_acc_idxs.keys().next();
-            let len: u64 = self.old_acc_idxs.len().try_into().unwrap();
-            //val is usize
-            let val = Information::new::<byte>(8);
-            size += (item.expect(" ").size() + val) * len;
-        }
+        size += assume_data_size_for_vec(&self.log);
+        size += assume_data_size_for_map(&self.old_acc_idxs);
         size
     }
 }
@@ -342,7 +334,7 @@ where
             bod_to_eod,
         };
         self.epoch_idxs_by_digest
-            .insert(bod_digest, self.past_epochs.len().into());
+            .insert(bod_digest, self.past_epochs.len());
         self.past_epochs.push(epoch);
     }
 }
@@ -364,14 +356,7 @@ where
     Snapshot<A>: DataSized,
 {
     fn size(&self) -> Information {
-        let size = self.inner.size();
-        match self.pool.get(0) {
-            None => size,
-            Some(a) => {
-                let len: u64 = self.pool.len().try_into().unwrap();
-                a.size() * len + size
-            }
-        }
+        self.inner.size() + self.pool.size()
     }
 }
 
@@ -409,17 +394,11 @@ where
     A::BatchWitness: DataSized,
 {
     fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(0);
-        if self.bod_package_counts.len() > 0 {
-            let item = self.bod_package_counts.keys().next();
-            let len: u64 = self.bod_package_counts.len().try_into().unwrap();
-            size += (item.expect("map not empty").size() + Information::new::<byte>(4)) * len;
-        }
-
-        size += self.bod_package_membership_witness.size()
-            + self.eod_package_membership_witness.size()
-            + self.bod_to_eod.size()
-            + self.eod_digest.size();
+        let mut size = self.bod_package_counts.size();
+        size += self.bod_package_membership_witness.size();
+        size += self.eod_package_membership_witness.size();
+        size += self.bod_to_eod.size();
+        size += self.eod_digest.size();
         size
     }
 }
@@ -439,25 +418,16 @@ pub struct PoolDiff<A: BatchAccumulator> {
 
 impl<A: BatchAccumulator> DataSized for PoolDiff<A>
 where
-    A::Digest: DataSized,
-    A::AppendOnlyWitness: DataSized,
+    Option<A::Digest>: DataSized,
+    Option<(A::Digest, A::AppendOnlyWitness)>: DataSized,
     CatchUpToEODProof<A>: DataSized,
 {
     fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(0);
-        if self.rest_of_current_day.len() > 0 {
-            let len: u64 = self.rest_of_current_day.len().try_into().unwrap();
-            size += len * self.rest_of_current_day[0].size();
-        }
-        if self.latest_pool.len() > 0 {
-            let len: u64 = self.latest_pool.len().try_into().unwrap();
-            size += len * self.latest_pool[0].size();
-        }
-        match &self.latest_digest {
-            None => {}
-            Some((d, a)) => size += d.size() + a.size(),
-        }
-        size += self.current_day_final_digest.size() + self.initial_digest.size();
+        let mut size = self.initial_digest.size();
+        size += self.rest_of_current_day.size();
+        size += self.latest_pool.size();
+        size += self.latest_digest.size();
+        size += self.current_day_final_digest.size();
         size
     }
 }
@@ -535,7 +505,7 @@ where
         let mut package_counts = catch_up_proof.bod_package_counts.clone();
 
         for package in self.pool.iter().chain(rest_of_current_day) {
-            match package_counts.get_mut(&package) {
+            match package_counts.get_mut(package) {
                 Some(r) => {
                     *r += 1;
                 }
@@ -608,29 +578,13 @@ where
     A::AppendOnlyWitness: DataSized,
 {
     fn size(&self) -> Information {
-        let mut size = self.eod_digest.size()
-            + self.bod_package_membership_witness.size()
-            + self.eod_package_membership_witness.size()
-            + self.bod_to_eod.size();
-        if self.packages.len() > 0 {
-            let len: u64 = self.packages.len().try_into().unwrap();
-            size += len * self.packages[0].size();
-        }
-        if self.bod_package_counts.len() > 0 {
-            let len: u64 = self.bod_package_counts.len().try_into().unwrap();
-            let item = self.bod_package_counts.keys().next();
-            // val is usize
-            let val = Information::new::<byte>(8);
-            size += (item.expect(" ").size() + val) * len;
-        }
-
-        if self.eod_package_counts.len() > 0 {
-            let len: u64 = self.eod_package_counts.len().try_into().unwrap();
-            let item = self.eod_package_counts.keys().next();
-            // val is usize
-            let val = Information::new::<byte>(8);
-            size += (item.expect(" ").size() + val) * len;
-        }
+        let mut size = self.eod_digest.size();
+        size += self.bod_package_membership_witness.size();
+        size += self.eod_package_membership_witness.size();
+        size += self.bod_to_eod.size();
+        size += self.packages.size();
+        size += self.bod_package_counts.size();
+        size += self.eod_package_counts.size();
         size
     }
 }
@@ -711,7 +665,7 @@ where
         };
         let past_epochs = vec![epoch.clone()];
         let mut epoch_idxs_by_digest = HashMap::default();
-        epoch_idxs_by_digest.insert(epoch.eod_digest.clone(), 0);
+        epoch_idxs_by_digest.insert(epoch.eod_digest, 0);
         Self {
             inner,
             past_epochs,
@@ -736,7 +690,7 @@ where
 
         let epoch_idx = *self.epoch_idxs_by_digest.get(&digest).unwrap();
         let epoch = &self.past_epochs[epoch_idx];
-        let rest_of_current_day = epoch.packages[id_idx..].to_vec().clone();
+        let rest_of_current_day = epoch.packages[id_idx..].to_vec();
 
         if (epoch_idx + 1) == self.past_epochs.len() {
             panic!("uh oh");
@@ -772,7 +726,7 @@ where
         // We're precomputing the nonmembership proof *for the side effect* of
         // adding it to the cache. If value is already in the accumulator, this
         // does nothing.
-        self.inner.acc.prove_nonmember(&value);
+        let _ = self.inner.acc.prove_nonmember(&value);
         self.current_pool.push(package);
     }
 
@@ -784,7 +738,7 @@ where
         let (inner_snapshot, pool_size) = snapshot_id.unwrap();
         let _ = pool_size;
         // assert_eq!(pool_size, self.current_pool.size());
-        let value = hash_package(&package);
+        let value = hash_package(package);
         let mut revision = self.inner.acc.get(&value);
         // let (bod_revision, bod_membership_proof) =
         //     self.inner.request_file(Some(inner_snapshot), package);
@@ -904,8 +858,7 @@ where
     }
 
     fn cdn_size(&self) -> Information {
-        self.inner.cdn_size()
-            + Information::new::<byte>((self.current_pool.len() * STRING_BYTES).try_into().unwrap())
+        self.inner.cdn_size() + self.current_pool.size()
     }
 }
 
@@ -917,21 +870,9 @@ where
 {
     fn size(&self) -> Information {
         let mut size = self.inner.size();
-        let len: u64 = self.past_epochs.len().try_into().unwrap();
-        size += len * Information::new::<byte>(32);
-
-        if self.epoch_idxs_by_digest.len() > 0 {
-            let len: u64 = self.epoch_idxs_by_digest.len().try_into().unwrap();
-            let item = self.epoch_idxs_by_digest.keys().next();
-            // val is usize
-            let val = Information::new::<byte>(8);
-            size += (item.expect(" ").size() + val) * len;
-        }
-
-        if self.current_pool.len() > 0 {
-            let len: u64 = self.current_pool.len().try_into().unwrap();
-            size += len * self.current_pool[0].size();
-        }
+        size += assume_data_size_for_vec(&self.past_epochs);
+        size += assume_data_size_for_map(&self.epoch_idxs_by_digest);
+        size += self.current_pool.size();
         size
     }
 }

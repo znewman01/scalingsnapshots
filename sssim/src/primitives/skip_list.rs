@@ -1,3 +1,4 @@
+use crate::util::assume_data_size_for_vec;
 use crate::util::DataSized;
 use crate::util::Information;
 
@@ -8,7 +9,7 @@ fn find_max_pow(mut index: usize) -> usize {
     let mut max_pow = 0;
     while index % 2 == 0 {
         max_pow += 1;
-        index = index >> 1;
+        index >>= 1;
     }
     max_pow
 }
@@ -40,13 +41,7 @@ where
     fn size(&self) -> Information {
         // the first entry will always have the max number of proofs
         // so this is an upper bound on the size
-        match self.entries.get(0) {
-            Some(e) => {
-                let len: u64 = self.entries.len().try_into().unwrap();
-                e.size() * len
-            }
-            None => uom::ConstZero::ZERO,
-        }
+        assume_data_size_for_vec(&self.entries)
     }
 }
 
@@ -91,6 +86,10 @@ impl<C: Collector> SkipList<C> {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -125,14 +124,7 @@ where
     P: DataSized,
 {
     fn size(&self) -> Information {
-        let size = self.item.size();
-        match self.proofs.get(0) {
-            Some(e) => {
-                let len: u64 = self.proofs.len().try_into().unwrap();
-                e.size() * len + size
-            }
-            None => size,
-        }
+        self.item.size() + assume_data_size_for_vec(&self.proofs)
     }
 }
 

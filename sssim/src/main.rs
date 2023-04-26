@@ -7,12 +7,10 @@ use time::Duration;
 
 use clap::Parser;
 use rusqlite::Connection;
-use serde::Serialize;
 use uom::si::information::byte;
 
 use sssim::authenticator::Authenticator;
-use sssim::log::{Entry, PackageId};
-use sssim::simulator::ResourceUsage;
+use sssim::log::PackageId;
 use sssim::util::{DataSized, Information};
 use sssim::{authenticator, PoolAuthenticator};
 
@@ -35,122 +33,88 @@ struct Args {
     threads: usize,
 }
 
-#[derive(Debug, Serialize)]
-struct Event {
-    entry: Entry,
-    result: ResourceUsage,
+trait Table {
+    fn create(db: &Connection) -> rusqlite::Result<()>;
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize>;
 }
 
 fn create_tables(db: &Connection) -> rusqlite::Result<()> {
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS overall_time (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            runtime_ns INTEGER,
-            technique  TEXT NOT NULL,
-            packages   INTEGER,
-            cores      INTEGER
-        )",
-        [],
-    )?;
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS precompute_results (
-             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-             technique          TEXT NOT NULL,
-             packages           INTEGER,
-             server_time_ns     INTEGER,
-             server_state_bytes INTEGER,
-             cdn_size_bytes     INTEGER,
-             cores              INTEGER
-        )",
-        [],
-    )?;
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS update_results (
-             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-             technique          TEXT NOT NULL,
-             packages           INTEGER,
-             server_time_ns     INTEGER,
-             server_state_bytes INTEGER,
-             cdn_size_bytes     INTEGER,
-             batch_size         INTEGER,
-             cores              INTEGER
-         )",
-        [],
-    )?;
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS merge_results (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            technique           TEXT NOT NULL,
-            packages            INTEGER,
-            server_state_bytes  INTEGER,
-            cdn_size_bytes      INTEGER,
-            merge_time          INTEGER,
-            batch_size          INTEGER,
-            cores               INTEGER
-        )",
-        [],
-    )?;
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS download_results (
-             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-             technique       TEXT NOT NULL,
-             packages        INTEGER,
-             user_time_ns    INTEGER,
-             bandwidth_bytes INTEGER,
-             cores           INTEGER
-         )",
-        [],
-    )?;
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS refresh_results (
-             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-             technique          TEXT NOT NULL,
-             packages           INTEGER,
-             elapsed_releases   INTEGER, -- null => initial refresh
-             user_time_ns       INTEGER,
-             bandwidth_bytes    INTEGER,
-             user_state_bytes   INTEGER,
-             cores              INTEGER
-         )",
-        [],
-    )?;
+    OverallTimeResult::create(db)?;
+    PrecomputeResult::create(db)?;
+    UpdateResult::create(db)?;
+    MergeResult::create(db)?;
+    RefreshResult::create(db)?;
+    DownloadResult::create(db)?;
     Ok(())
 }
 
-fn insert_overall_time(
-    db: &Connection,
-    runtime: Duration,
-    technique: &str,
-    packages: usize,
-    cores: usize,
-) -> rusqlite::Result<usize> {
-    let runtime_ns: u64 = runtime.whole_nanoseconds().try_into().unwrap();
-    db.execute(
-        "
-        INSERT INTO overall_time (
-            runtime_ns,
-            technique,
-            packages,
-            cores
-        ) VALUES (?1, ?2, ?3, ?4) ",
-        rusqlite::params![runtime_ns, technique, packages, cores],
-    )
+fn duration_to_ns(duration: Duration) -> u64 {
+    duration.whole_nanoseconds().try_into().unwrap()
 }
 
-fn insert_precompute_result(
-    db: &Connection,
-    technique: &str,
+struct OverallTimeResult {
+    runtime: Duration,
+    packages: usize,
+    cores: usize,
+}
+
+impl Table for OverallTimeResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS overall_time (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            runtime_ns INTEGER,
+            packages   INTEGER,
+            cores      INTEGER
+        )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        let runtime_ns: u64 = duration_to_ns(self.runtime);
+        db.execute(
+            "
+            INSERT INTO overall_time (
+                runtime_ns,
+                technique,
+                packages,
+                cores
+            ) VALUES ( ?1, ?2, ?3, ?4 )",
+            rusqlite::params![runtime_ns, A::name(), self.packages, self.cores],
+        )
+    }
+}
+
+struct PrecomputeResult {
     packages: usize,
     time: Duration,
     server_state: Information,
     cdn_size: Information,
     cores: usize,
-) -> rusqlite::Result<usize> {
-    let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
-    let server_state_bytes: u64 = server_state.get::<byte>();
-    let cdn_size_bytes: u64 = cdn_size.get::<byte>();
-    db.execute(
-        "
+}
+
+impl Table for PrecomputeResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS precompute_results (
+             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             packages           INTEGER,
+             server_time_ns     INTEGER,
+             server_state_bytes INTEGER,
+             cdn_size_bytes     INTEGER,
+             cores              INTEGER
+        )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        db.execute(
+            "
         INSERT INTO precompute_results (
             technique,
             packages,
@@ -159,32 +123,47 @@ fn insert_precompute_result(
             cdn_size_bytes,
             cores
         ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6 ) ",
-        rusqlite::params![
-            technique,
-            packages,
-            time_ns,
-            server_state_bytes,
-            cdn_size_bytes,
-            cores,
-        ],
-    )
+            rusqlite::params![
+                A::name(),
+                self.packages,
+                duration_to_ns(self.time),
+                self.server_state.get::<byte>(),
+                self.cdn_size.get::<byte>(),
+                self.cores,
+            ],
+        )
+    }
 }
 
-fn insert_update_result(
-    db: &Connection,
-    technique: &str,
+struct UpdateResult {
     packages: usize,
     time: Duration,
     server_state: Information,
     cdn_size: Information,
     batch_size: u16,
     cores: usize,
-) -> rusqlite::Result<usize> {
-    let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
-    let server_state_bytes = server_state.get::<byte>();
-    let cdn_size_bytes = cdn_size.get::<byte>(); //
-    db.execute(
-        "
+}
+
+impl Table for UpdateResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS update_results (
+             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             packages           INTEGER,
+             server_time_ns     INTEGER,
+             server_state_bytes INTEGER,
+             cdn_size_bytes     INTEGER,
+             batch_size         INTEGER,
+             cores              INTEGER
+         )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        db.execute(
+            "
         INSERT INTO update_results (
             technique,
             packages,
@@ -194,33 +173,48 @@ fn insert_update_result(
             batch_size,
             cores
         ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
-        rusqlite::params![
-            technique,
-            packages,
-            time_ns,
-            server_state_bytes,
-            cdn_size_bytes,
-            batch_size,
-            cores,
-        ],
-    )
+            rusqlite::params![
+                A::name(),
+                self.packages,
+                duration_to_ns(self.time),
+                self.server_state.get::<byte>(),
+                self.cdn_size.get::<byte>(),
+                self.batch_size,
+                self.cores,
+            ],
+        )
+    }
 }
 
-fn insert_merge_result(
-    db: &Connection,
-    technique: &str,
+struct MergeResult {
     packages: usize,
     server_state: Information,
     cdn_size: Information,
     merge_time: Duration,
     batch_size: u16,
     cores: usize,
-) -> rusqlite::Result<usize> {
-    let merge_time_ns: u64 = merge_time.whole_nanoseconds().try_into().unwrap();
-    let server_state_bytes = server_state.get::<byte>();
-    let cdn_size_bytes = cdn_size.get::<byte>(); //
-    db.execute(
-        "
+}
+
+impl Table for MergeResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS merge_results (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            packages            INTEGER,
+            server_state_bytes  INTEGER,
+            cdn_size_bytes      INTEGER,
+            merge_time          INTEGER,
+            batch_size          INTEGER,
+            cores               INTEGER
+        )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        db.execute(
+            "
         INSERT INTO merge_results (
             technique,
             packages,
@@ -230,33 +224,48 @@ fn insert_merge_result(
             batch_size,
             cores
         ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
-        rusqlite::params![
-            technique,
-            packages,
-            server_state_bytes,
-            merge_time_ns,
-            cdn_size_bytes,
-            batch_size,
-            cores,
-        ],
-    )
+            rusqlite::params![
+                A::name(),
+                self.packages,
+                self.server_state.get::<byte>(),
+                duration_to_ns(self.merge_time),
+                self.cdn_size.get::<byte>(),
+                self.batch_size,
+                self.cores,
+            ],
+        )
+    }
 }
 
-fn insert_refresh_result(
-    db: &Connection,
-    technique: &str,
+struct RefreshResult {
     packages: usize,
     elapsed_releases: Option<usize>,
     time: Duration,
     bandwidth: Information,
     user_state: Information,
     cores: usize,
-) -> rusqlite::Result<usize> {
-    let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
-    let bandwidth_bytes: u64 = bandwidth.get::<byte>();
-    let user_state_bytes: u64 = user_state.get::<byte>();
-    db.execute(
-        "
+}
+
+impl Table for RefreshResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS refresh_results (
+             id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+             packages           INTEGER,
+             elapsed_releases   INTEGER, -- null => initial refresh
+             user_time_ns       INTEGER,
+             bandwidth_bytes    INTEGER,
+             user_state_bytes   INTEGER,
+             cores              INTEGER
+         )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        db.execute(
+            "
         INSERT INTO refresh_results (
             technique,
             packages,
@@ -266,16 +275,17 @@ fn insert_refresh_result(
             user_state_bytes,
             cores
         ) VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7 ) ",
-        rusqlite::params![
-            technique,
-            packages,
-            elapsed_releases,
-            time_ns,
-            bandwidth_bytes,
-            user_state_bytes,
-            cores
-        ],
-    )
+            rusqlite::params![
+                A::name(),
+                self.packages,
+                self.elapsed_releases,
+                duration_to_ns(self.time),
+                self.bandwidth.get::<byte>(),
+                self.user_state.get::<byte>(),
+                self.cores
+            ],
+        )
+    }
 }
 
 fn batch_update_trials<A>(
@@ -294,37 +304,35 @@ where
         println!("trial {i}");
         let mut auth = auth.clone();
         for b in 0..batch_size {
-            let package_id = PackageId::from(format!("new_package{}", b));
+            let package_id = PackageId::from(format!("new_package{b}"));
             let (update_time, _) = Duration::time_fn(|| {
                 auth.publish(package_id);
             });
             let cdn_size = auth.cdn_size();
-            insert_update_result(
-                db,
-                A::name(),
-                num_packages,
-                update_time,
-                auth.size(),
+            let result = UpdateResult {
+                packages: num_packages,
+                time: update_time,
+                server_state: auth.size(),
                 cdn_size,
-                b + 1,
+                batch_size: b + 1,
                 cores,
-            )?;
+            };
+            result.insert::<A>(db)?;
         }
 
         let (merge_time, _) = Duration::time_fn(|| {
             auth.batch_process();
         });
         let cdn_size = auth.cdn_size();
-        insert_merge_result(
-            db,
-            A::name(),
-            num_packages,
-            auth.size(),
+        let result = MergeResult {
+            packages: num_packages,
+            server_state: auth.size(),
             cdn_size,
             merge_time,
             batch_size,
             cores,
-        )?;
+        };
+        result.insert::<A>(db)?;
     }
     Ok(())
 }
@@ -350,16 +358,15 @@ where
         });
 
         let cdn_size = auth.cdn_size();
-        insert_update_result(
-            db,
-            A::name(),
-            num_packages,
-            update_time,
-            auth.size(),
+        let result = UpdateResult {
+            packages: num_packages,
+            time: update_time,
+            server_state: auth.size(),
             cdn_size,
             batch_size,
             cores,
-        )?;
+        };
+        result.insert::<A>(db)?;
     }
 
     Ok(())
@@ -367,34 +374,32 @@ where
 
 fn precompute_trials<A>(
     num_trials: u16,
-    num_packages: usize,
     db: &Connection,
-    packages: &Vec<PackageId>,
+    packages: &[PackageId],
     cores: usize,
 ) -> rusqlite::Result<A>
 where
     A: Authenticator + Debug,
 {
     let mut auth = None;
+    let num_packages = packages.len();
     println!("{num_trials} trials");
     for i in 0..num_trials {
         println!("trial number: {i}");
         // TODO(maybe): more hooks for progress reporting in batch_import
-        let packages = packages.clone();
+        let packages = packages.to_owned();
         let (precompute_time, inner_auth) = Duration::time_fn(|| A::batch_import(packages));
         let cdn_size = inner_auth.cdn_size();
-        insert_precompute_result(
-            db,
-            A::name(),
-            num_packages,
-            precompute_time,
-            inner_auth.size(),
+        let result = PrecomputeResult {
+            packages: num_packages,
+            time: precompute_time,
+            server_state: inner_auth.size(),
             cdn_size,
             cores,
-        )?;
+        };
+        result.insert::<A>(db)?;
         auth.replace(inner_auth);
     }
-    // auth: A = auth.clone().take().unwrap();
 
     Ok(auth.unwrap())
 }
@@ -411,16 +416,15 @@ fn create_user_state<A: Authenticator>(
     for i in 0..num_trials {
         println!("trial {i}");
         let user_state = auth.get_metadata();
-        insert_refresh_result(
-            db,
-            A::name(),
-            num_packages,
-            None,
-            Duration::ZERO,
-            user_state.size(),
-            user_state.size(),
+        let result = RefreshResult {
+            packages: num_packages,
+            elapsed_releases: None,
+            time: Duration::ZERO,
+            bandwidth: user_state.size(),
+            user_state: user_state.size(),
             cores,
-        )?;
+        };
+        result.insert::<A>(db)?;
         user_state_initial.replace(user_state);
     }
     let user_state_initial = user_state_initial.take().unwrap();
@@ -459,25 +463,24 @@ fn refresh_user_state<A: Authenticator + Clone>(
                     }
                     None => (Information::new::<byte>(0), Duration::ZERO),
                 };
-                insert_refresh_result(
-                    db,
-                    A::name(),
-                    num_packages,
-                    Some(idx),
-                    user_time,
+                let result = RefreshResult {
+                    packages: num_packages,
+                    elapsed_releases: Some(idx),
+                    time: user_time,
                     bandwidth,
-                    user_state.size(),
+                    user_state: user_state.size(),
                     cores,
-                )?;
+                };
+                result.insert::<A>(db)?;
             }
             elapsed_releases.pop_front();
             if elapsed_releases.is_empty() {
                 break;
             }
         }
-        let package = PackageId::from(format!("new_package{}", idx));
+        let package = PackageId::from(format!("new_package{idx}"));
         auth.publish(package);
-        println!("{}, {:?}", idx, auth.size());
+        println!("{idx}, {:?}", auth.size());
     }
     bar.finish();
     Ok(())
@@ -502,30 +505,49 @@ where
         let user_state = auth.get_metadata();
         let package = rand::seq::SliceRandom::choose(packages.as_slice(), &mut rng).unwrap();
 
-        let (revision, proof) = auth.request_file(A::id(&user_state), &package);
+        let (revision, proof) = auth.request_file(A::id(&user_state), package);
         let bandwidth = proof.size();
 
         let (user_time, _) =
-            Duration::time_fn(|| A::verify_membership(&user_state, &package, revision, proof));
+            Duration::time_fn(|| A::verify_membership(&user_state, package, revision, proof));
 
-        insert_download_result(db, A::name(), num_packages, user_time, bandwidth, cores)?;
+        let result = DownloadResult {
+            packages: num_packages,
+            time: user_time,
+            bandwidth,
+            cores,
+        };
+        result.insert::<A>(db)?;
     }
 
     Ok(())
 }
 
-fn insert_download_result(
-    db: &Connection,
-    technique: &str,
+struct DownloadResult {
     packages: usize,
     time: Duration,
     bandwidth: Information,
     cores: usize,
-) -> rusqlite::Result<usize> {
-    let time_ns: u64 = time.whole_nanoseconds().try_into().unwrap();
-    let bandwidth_bytes: u64 = bandwidth.get::<byte>();
-    db.execute(
-        "
+}
+
+impl Table for DownloadResult {
+    fn create(db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS download_results (
+             id              INTEGER PRIMARY KEY AUTOINCREMENT,
+             packages        INTEGER,
+             user_time_ns    INTEGER,
+             bandwidth_bytes INTEGER,
+             cores           INTEGER
+         )",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn insert<A: Authenticator>(&self, db: &Connection) -> rusqlite::Result<usize> {
+        db.execute(
+            "
         INSERT INTO download_results (
             technique,
             packages,
@@ -533,43 +555,58 @@ fn insert_download_result(
             bandwidth_bytes,
             cores
         ) VALUES ( ?1, ?2, ?3, ?4, ?5 ) ",
-        rusqlite::params![technique, packages, time_ns, bandwidth_bytes, cores],
-    )
+            rusqlite::params![
+                A::name(),
+                self.packages,
+                duration_to_ns(self.time),
+                self.bandwidth.get::<byte>(),
+                self.cores
+            ],
+        )
+    }
 }
-
-fn run<A>(packages: Vec<PackageId>, db: &Connection, cores: usize) -> rusqlite::Result<()>
+fn run<A>(
+    packages: Vec<PackageId>,
+    db: &Connection,
+    cores: usize,
+) -> rusqlite::Result<OverallTimeResult>
 where
     A: Authenticator + Clone + Debug,
 {
-    static PRECOMPUTE_TRIALS: u16 = 1;
-    static UPDATE_TRIALS: u16 = 1;
-    static REFRESH_TRIALS: u16 = 1;
-    static DOWNLOAD_TRIALS: u16 = 1;
-
     let num_packages = packages.len();
+    let (runtime, err) = Duration::time_fn(|| {
+        static PRECOMPUTE_TRIALS: u16 = 1;
+        static UPDATE_TRIALS: u16 = 1;
+        static REFRESH_TRIALS: u16 = 1;
+        static DOWNLOAD_TRIALS: u16 = 1;
 
-    println!("precompute");
-    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, num_packages, db, &packages, cores)?;
+        println!("precompute");
+        let auth: A = precompute_trials(PRECOMPUTE_TRIALS, db, &packages, cores)?;
 
-    println!("update");
-    update_trials(UPDATE_TRIALS, &auth, num_packages, cores, db)?;
+        println!("update");
+        update_trials(UPDATE_TRIALS, &auth, num_packages, cores, db)?;
 
-    println!("refresh");
-    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
+        println!("refresh");
+        let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
 
-    refresh_user_state(
-        REFRESH_TRIALS,
-        &auth,
-        num_packages,
-        db,
-        user_state_initial,
+        refresh_user_state(
+            REFRESH_TRIALS,
+            &auth,
+            num_packages,
+            db,
+            user_state_initial,
+            cores,
+        )?;
+
+        println!("download");
+        download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
+        Ok(())
+    });
+    err.map(|_| OverallTimeResult {
+        runtime,
+        packages: num_packages,
         cores,
-    )?;
-
-    println!("download");
-    download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
-
-    Ok(())
+    })
 }
 
 fn run_batch<A>(
@@ -577,41 +614,47 @@ fn run_batch<A>(
     db: &Connection,
     batch_sizes: Vec<u16>,
     cores: usize,
-) -> rusqlite::Result<()>
+) -> rusqlite::Result<OverallTimeResult>
 where
     A: PoolAuthenticator + Clone + Debug,
 {
-    static PRECOMPUTE_TRIALS: u16 = 1;
-    static UPDATE_TRIALS: u16 = 1;
-    static REFRESH_TRIALS: u16 = 1;
-    static DOWNLOAD_TRIALS: u16 = 1;
-
     let num_packages = packages.len();
+    let (runtime, err) = Duration::time_fn(|| {
+        static PRECOMPUTE_TRIALS: u16 = 1;
+        static UPDATE_TRIALS: u16 = 1;
+        static REFRESH_TRIALS: u16 = 1;
+        static DOWNLOAD_TRIALS: u16 = 1;
 
-    println!("precompute");
-    let auth: A = precompute_trials(PRECOMPUTE_TRIALS, num_packages, db, &packages, cores)?;
+        println!("precompute");
+        let auth: A = precompute_trials(PRECOMPUTE_TRIALS, db, &packages, cores)?;
 
-    for batch_size in batch_sizes {
-        print!("batch_size: {batch_size}\n");
-        batch_update_trials(UPDATE_TRIALS, &auth, batch_size, num_packages, cores, db)?;
-    }
+        for batch_size in batch_sizes {
+            println!("batch_size: {batch_size}");
+            batch_update_trials(UPDATE_TRIALS, &auth, batch_size, num_packages, cores, db)?;
+        }
 
-    println!("refresh");
-    let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
+        println!("refresh");
+        let user_state_initial = create_user_state(REFRESH_TRIALS, &auth, num_packages, cores, db)?;
 
-    refresh_user_state(
-        REFRESH_TRIALS,
-        &auth,
-        num_packages,
-        db,
-        user_state_initial,
+        refresh_user_state(
+            REFRESH_TRIALS,
+            &auth,
+            num_packages,
+            db,
+            user_state_initial,
+            cores,
+        )?;
+
+        println!("download");
+        download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
+
+        Ok(())
+    });
+    err.map(|_| OverallTimeResult {
+        runtime,
+        packages: num_packages,
         cores,
-    )?;
-
-    println!("download");
-    download_trials(DOWNLOAD_TRIALS, auth, num_packages, db, packages, cores)?;
-
-    Ok(())
+    })
 }
 
 fn main() -> io::Result<()> {
@@ -623,7 +666,7 @@ fn main() -> io::Result<()> {
         .unwrap();
 
     let authenticators: Vec<String> = match args.authenticators {
-        Some(authenticators) => authenticators.split(",").map(String::from).collect(),
+        Some(authenticators) => authenticators.split(',').map(String::from).collect(),
         None => vec![
             "insecure",
             "hackage",
@@ -645,38 +688,38 @@ fn main() -> io::Result<()> {
     let db = Connection::open(&args.results).expect("creating SQLite db");
     create_tables(&db).unwrap();
     for authenticator in authenticators.into_iter() {
-        println!("\nauthenticator: {}", authenticator);
+        println!("\nauthenticator: {authenticator}");
 
         let packages = packages.clone();
-        let package_len = packages.len();
         let batch_sizes = if args.threads == 1 {
             vec![100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
         } else {
             vec![100]
         };
-        let (runtime, _) = Duration::time_fn(|| {
-            match authenticator.as_str() {
-                "insecure" => run::<authenticator::Insecure>(packages, &db, args.threads),
-                "hackage" => run::<authenticator::Hackage>(packages, &db, args.threads),
-                "mercury_diff" => run::<authenticator::MercuryDiff>(packages, &db, args.threads),
-                "sparse_merkle" => run::<authenticator::SparseMerkle>(packages, &db, args.threads),
-                "rsa" => run::<authenticator::Rsa>(packages, &db, args.threads),
-                // TODO(must): try with different batch sizes
-                "rsa_pool" => {
-                    run_batch::<authenticator::RsaPool>(packages, &db, batch_sizes, args.threads)
-                }
-                "mercury" => run::<authenticator::VanillaTuf>(packages, &db, args.threads),
-                _ => panic!("not valid"),
+        let result = match authenticator.as_str() {
+            "insecure" => run::<authenticator::Insecure>(packages, &db, args.threads),
+            "hackage" => run::<authenticator::Hackage>(packages, &db, args.threads),
+            "mercury_diff" => run::<authenticator::MercuryDiff>(packages, &db, args.threads),
+            "sparse_merkle" => run::<authenticator::SparseMerkle>(packages, &db, args.threads),
+            "rsa" => run::<authenticator::Rsa>(packages, &db, args.threads),
+            // TODO(must): try with different batch sizes
+            "rsa_pool" => {
+                run_batch::<authenticator::RsaPool>(packages, &db, batch_sizes, args.threads)
             }
-            .unwrap();
-        });
-        insert_overall_time(
-            &db,
-            runtime,
-            authenticator.as_str(),
-            package_len,
-            args.threads,
-        )
+            "mercury" => run::<authenticator::VanillaTuf>(packages, &db, args.threads),
+            _ => panic!("not valid"),
+        }
+        .unwrap();
+        match authenticator.as_str() {
+            "insecure" => result.insert::<authenticator::Insecure>(&db),
+            "hackage" => result.insert::<authenticator::Hackage>(&db),
+            "mercury_diff" => result.insert::<authenticator::MercuryDiff>(&db),
+            "sparse_merkle" => result.insert::<authenticator::SparseMerkle>(&db),
+            "rsa" => result.insert::<authenticator::Rsa>(&db),
+            "rsa_pool" => result.insert::<authenticator::RsaPool>(&db),
+            "mercury" => result.insert::<authenticator::VanillaTuf>(&db),
+            _ => panic!("not valid"),
+        }
         .unwrap();
     }
 

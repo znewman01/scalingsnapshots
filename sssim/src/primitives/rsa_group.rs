@@ -100,7 +100,7 @@ impl Mul<&Integer> for Rsa2048Group {
     type Output = Self;
 
     fn mul(mut self, rhs: &Integer) -> Self::Output {
-        self *= &rhs;
+        self *= rhs;
         self
     }
 }
