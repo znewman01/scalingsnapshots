@@ -43,6 +43,7 @@ impl DataSized for Snapshot {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
+    // TODO(must): replace with a skiplist
     snapshots: HashMap<u64, Snapshot>,
     snapshot: Snapshot,
 }

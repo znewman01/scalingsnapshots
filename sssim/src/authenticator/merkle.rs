@@ -1,88 +1,79 @@
-//! TODO(maybe): this is Mercury, not vanilla TUF.
-//! Vanilla TUF downloads *all* metadata:
-//! - snapshot: map from filename to HASH of targets metadata
-//! - targets metadata, which includes version number
-//!   - only new targets, because duh
-use std::collections::HashMap;
+//! Merkle binary prefix tree authenticator.
+use std::fmt::Debug;
 
-#[cfg(test)]
-use {proptest::prelude::*, proptest_derive::Arbitrary};
-
+use derivative::Derivative;
+use digest::Output;
+use digest_hash::EndianUpdate;
 use serde::Serialize;
 
 use crate::util::DataSized;
 
+use crate::primitives::merkle::{Digest, Hasher, ObjectHasher, Proof, Tree};
+use crate::util::FixedDataSized;
 use crate::{authenticator::Revision, log::PackageId, util::byte, util::Information};
 
-#[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Clone, Debug, Serialize)]
-pub struct Snapshot {
-    packages: HashMap<PackageId, Revision>,
-    id: u64,
+#[derive(Clone, Debug, Serialize)]
+#[serde(bound = "Output<H>: Serialize")]
+pub struct Snapshot<H: Hasher> {
+    digest: Digest<PackageId, H>,
 }
 
-impl DataSized for Snapshot {
-    fn size(&self) -> Information {
-        let mut size = Information::new::<byte>(8); // id
-        let len: u64 = self.packages.len().try_into().unwrap();
-        size += match self.packages.iter().next() {
-            Some((k, v)) => (k.size() + v.size()) * len,
-            None => Information::new::<byte>(0),
-        };
-        size
+impl<H: Hasher> FixedDataSized for Snapshot<H> {
+    fn fixed_size() -> Information {
+        Information::new::<byte>(<H as Hasher>::output_size())
     }
 }
 
-/// The vanilla TUF client snapshot contains *all* the snapshot state.
-
-/// An authenticator as-in vanilla TUF.
-#[cfg_attr(test, derive(Arbitrary))]
-#[derive(Default, Clone, Debug, Serialize)]
-pub struct Authenticator {
-    snapshot: Snapshot,
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default(bound = "Tree<PackageId, Revision, H>: Default"))]
+pub struct Authenticator<H: Hasher> {
+    tree: Tree<PackageId, Revision, H>,
 }
 
-impl DataSized for Authenticator {
+impl<H: Hasher> DataSized for Authenticator<H>
+where
+    Tree<PackageId, Revision, H>: DataSized,
+{
     fn size(&self) -> Information {
-        self.snapshot.size()
+        self.tree.size()
     }
 }
 
 #[allow(unused_variables)]
-impl super::Authenticator for Authenticator {
-    type ClientSnapshot = Snapshot;
-    type Id = u64;
-    type Diff = Snapshot;
-    type Proof = ();
+impl<H: Hasher> super::Authenticator for Authenticator<H>
+where
+    ObjectHasher<H>: Hasher<OutputSize = H::OutputSize> + EndianUpdate,
+    Output<H>: Copy,
+    H: Debug,
+    Snapshot<H>: Clone + Serialize,
+    Proof<Revision, H>: Serialize + Clone + DataSized,
+{
+    type ClientSnapshot = Snapshot<H>;
+    type Id = ();
+    type Diff = Snapshot<H>;
+    type Proof = Proof<Revision, H>;
 
     fn name() -> &'static str {
-        "vanilla_tuf"
-    }
-
-    fn batch_import(packages: Vec<PackageId>) -> Self {
-        let mut snapshot = Snapshot::default();
-        for p in packages {
-            snapshot.packages.insert(p, Revision::default());
-        }
-        snapshot.id = 1;
-        Self { snapshot }
+        "merkle_bpt"
     }
 
     fn refresh_metadata(&self, snapshot_id: Self::Id) -> Option<Self::Diff> {
-        if snapshot_id == Self::id(&self.snapshot) {
-            // already up to date
-            return None;
-        }
-        Some(self.snapshot.clone())
+        Some(self.get_metadata())
+    }
+
+    fn get_metadata(&self) -> Self::ClientSnapshot {
+        let digest = self.tree.digest();
+        Snapshot { digest }
     }
 
     fn publish(&mut self, package: PackageId) {
-        self.snapshot.id += 1;
-        self.snapshot
-            .packages
-            .entry(package)
-            .and_modify(|r| r.0 = r.0.checked_add(1).unwrap())
-            .or_insert_with(Revision::default);
+        let revision = self
+            .tree
+            .values()
+            .get(&package)
+            .map(Revision::incremented)
+            .unwrap_or_else(Default::default);
+        self.tree.insert(package, revision);
     }
 
     fn request_file(
@@ -90,39 +81,28 @@ impl super::Authenticator for Authenticator {
         snapshot_id: Self::Id,
         package: &PackageId,
     ) -> (Revision, Self::Proof) {
-        let revision = self
-            .snapshot
-            .packages
-            .get(package)
-            .expect("Should never get a request for a package that's missing.");
-        (*revision, ())
+        let proof = self.tree.lookup(package).cloned();
+        let revision = proof
+            .get_unverified()
+            .expect("should never get a file request for a missing package");
+        (*revision, proof)
     }
 
-    fn get_metadata(&self) -> Snapshot {
-        self.snapshot.clone()
+    fn batch_import(packages: Vec<PackageId>) -> Self {
+        let mut tree: Tree<_, _, _> = Default::default();
+        for p in packages {
+            tree.insert(p, Revision::default());
+        }
+        Self { tree }
     }
 
-    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {
-        snapshot.id
-    }
+    fn id(snapshot: &Self::ClientSnapshot) -> Self::Id {}
 
     fn update(snapshot: &mut Self::ClientSnapshot, diff: Self::Diff) {
-        snapshot.packages = diff.packages;
-        snapshot.id = diff.id
+        *snapshot = diff
     }
 
     fn check_no_rollback(snapshot: &Self::ClientSnapshot, diff: &Self::Diff) -> bool {
-        for (package_id, old_revision) in &snapshot.packages {
-            let new_revision = match diff.packages.get(package_id) {
-                None => {
-                    return false;
-                }
-                Some(r) => r,
-            };
-            if new_revision < old_revision {
-                return false;
-            }
-        }
         true
     }
 
@@ -130,22 +110,13 @@ impl super::Authenticator for Authenticator {
         snapshot: &Self::ClientSnapshot,
         package_id: &PackageId,
         revision: Revision,
-        _: Self::Proof,
+        proof: Self::Proof,
     ) -> bool {
-        if let Some(old_revision) = snapshot.packages.get(package_id) {
-            &revision == old_revision
-        } else {
-            false
-        }
+        snapshot.digest.verify(package_id, proof) == Ok(Some(revision))
     }
 
     fn cdn_size(&self) -> Information {
-        let mut size = self.snapshot.id.size();
-        for (key, value) in &self.snapshot.packages {
-            size += key.size();
-            size += value.size();
-        }
-        size
+        self.size()
     }
 }
 

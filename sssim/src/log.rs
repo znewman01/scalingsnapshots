@@ -40,6 +40,17 @@ impl From<String> for UserId {
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PackageId(pub String);
 
+impl digest_hash::Hash for PackageId {
+    fn hash<H>(&self, digest: &mut H)
+    where
+        H: digest_hash::EndianUpdate,
+    {
+        for c in self.0.as_bytes() {
+            c.hash(digest);
+        }
+    }
+}
+
 impl FixedDataSized for PackageId {
     fn fixed_size() -> Information {
         // assumed average size of all package name strings

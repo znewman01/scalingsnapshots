@@ -98,13 +98,12 @@ impl super::Authenticator for Authenticator {
     type Proof = Proof;
 
     fn name() -> &'static str {
-        "merkle"
+        "sparse_merkle"
     }
 
     fn batch_import(packages: Vec<PackageId>) -> Self {
         let mut nodes = Vec::<(TreeIndex, Node)>::new();
         let mut revisions = HashMap::<PackageId, Revision>::new();
-        println!("foo");
         for p in packages {
             let idx = TreeIndex::new(TREE_HEIGHT, hash(p.0.as_bytes()));
             let revision = Revision::default();

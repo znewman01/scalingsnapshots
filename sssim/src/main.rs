@@ -707,8 +707,8 @@ fn main() -> io::Result<()> {
             "hackage" => run::<authenticator::Hackage>(packages, &db, args.threads),
             "mercury_diff" => run::<authenticator::MercuryDiff>(packages, &db, args.threads),
             "sparse_merkle" => run::<authenticator::SparseMerkle>(packages, &db, args.threads),
+            "merkle_bpt" => run::<authenticator::MerkleBpt>(packages, &db, args.threads),
             "rsa" => run::<authenticator::Rsa>(packages, &db, args.threads),
-            // TODO(must): try with different batch sizes
             "rsa_pool" => {
                 run_batch::<authenticator::RsaPool>(packages, &db, batch_sizes, args.threads)
             }
@@ -722,6 +722,7 @@ fn main() -> io::Result<()> {
             "hackage" => result.insert::<authenticator::Hackage>(&db),
             "mercury_diff" => result.insert::<authenticator::MercuryDiff>(&db),
             "sparse_merkle" => result.insert::<authenticator::SparseMerkle>(&db),
+            "merkle_bpt" => result.insert::<authenticator::MerkleBpt>(&db),
             "rsa" => result.insert::<authenticator::Rsa>(&db),
             "rsa_pool" => result.insert::<authenticator::RsaPool>(&db),
             "mercury" => result.insert::<authenticator::VanillaTuf>(&db),

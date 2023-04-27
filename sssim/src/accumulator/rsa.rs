@@ -279,7 +279,7 @@ where
         members: &HashMap<Prime, u32>,
         mut witness: Self::BatchWitness,
     ) -> bool {
-        // TODO(maybe): do better using BBF19?
+        // TODO(probably not): do better using BBF19?
         for (member, revision) in members {
             let proof = match witness.inner.remove(member) {
                 Some(proof) => proof,
@@ -341,7 +341,7 @@ where
     }
 }
 
-// TODO(probably not): shard storage across # cores
+// TODO(maybe): shard storage across # cores
 #[derive(Default, Debug, Clone)]
 pub struct RsaAccumulator<G>
 where
@@ -569,7 +569,7 @@ impl<G: Group + TryFrom<rug::Integer> + 'static> RsaAccumulator<G> {
             return None; // value is a member!
         }
 
-        // TODO(maybe): parallelize GCD
+        // TODO(probably not): parallelize GCD
         // gcd(a1, b) = 1 and gcd(a2, b) =1 => gcd(a1 * a2, b) = 1
 
         // Bezout coefficients:

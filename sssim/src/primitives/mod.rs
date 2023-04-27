@@ -1,6 +1,6 @@
 mod group;
 mod group_hidden_order;
-mod merkle;
+pub mod merkle;
 pub mod prime;
 mod refinement;
 mod rsa_group;

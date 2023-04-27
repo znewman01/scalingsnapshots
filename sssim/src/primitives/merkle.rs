@@ -1,15 +1,19 @@
 //! Merkp_le binary prefix tree (trie) for representing a dictionary.
 //!
 //! Follows CONIKS.
-use crate::bit_twiddling::*;
+use crate::{
+    bit_twiddling::*,
+    util::{assume_data_size_for_map, byte, DataSized, FixedDataSized, Information},
+};
 use derivative::Derivative;
 use digest::Output;
 use digest_hash::{EndianUpdate, Hash};
-use std::{collections::HashMap, marker::PhantomData};
+use serde::Serialize;
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, mem::size_of};
 use thiserror::Error;
 
-pub trait Hasher = digest::Digest;
-type ObjectHasher<H> = digest_hash::LittleEndian<H>;
+pub use digest::Digest as Hasher;
+pub use digest_hash::LittleEndian as ObjectHasher;
 
 const NONCE: [u8; 4] = [0, 0, 0, 0];
 const NODE_TYPE_EMPTY: [u8; 4] = [0, 0, 0, 1];
@@ -50,6 +54,12 @@ struct LeafData<H: Hasher> {
     depth: usize,
     /// H(value).
     value_hash: Output<H>,
+}
+
+impl<H: Hasher> FixedDataSized for LeafData<H> {
+    fn fixed_size() -> crate::util::Information {
+        Information::new::<byte>(size_of::<usize>() + <H as Hasher>::output_size() * 2)
+    }
 }
 
 impl<H: Hasher> LeafData<H> {
@@ -93,6 +103,12 @@ struct EmptyData<H: Hasher> {
     prefix: Output<H>,
 }
 
+impl<H: Hasher> FixedDataSized for EmptyData<H> {
+    fn fixed_size() -> crate::util::Information {
+        Information::new::<byte>(size_of::<usize>() + <H as digest::Digest>::output_size())
+    }
+}
+
 impl<H: Hasher> EmptyData<H> {
     fn new(depth: usize, prefix: Output<H>) -> Self {
         debug_assert_eq!(mask(&prefix, depth), prefix);
@@ -124,10 +140,16 @@ where
     hasher.finalize()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct InteriorData<H: Hasher> {
     left: Box<Node<H>>,
     right: Box<Node<H>>,
+}
+
+impl<H: Hasher> FixedDataSized for InteriorData<H> {
+    fn fixed_size() -> crate::util::Information {
+        2 * Information::new::<byte>(size_of::<usize>())
+    }
 }
 
 impl<H: Hasher> InteriorData<H> {
@@ -167,14 +189,14 @@ impl<H: Hasher> InteriorData<H> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum NodeData<H: Hasher> {
     Leaf(LeafData<H>),
     Empty(EmptyData<H>),
     Interior(InteriorData<H>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Node<H: Hasher> {
     inner: NodeData<H>,
     hash: Output<H>,
@@ -249,13 +271,61 @@ where
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+struct NodeCounts {
+    interior: isize,
+    leaf: isize,
+    empty: isize,
+}
+
+impl NodeCounts {
+    fn interior_unsigned(&self) -> usize {
+        self.interior.try_into().unwrap()
+    }
+
+    fn leaf_unsigned(&self) -> usize {
+        self.leaf.try_into().unwrap()
+    }
+
+    fn empty_unsigned(&self) -> usize {
+        self.empty.try_into().unwrap()
+    }
+}
+
+impl std::ops::AddAssign for NodeCounts {
+    fn add_assign(&mut self, rhs: Self) {
+        self.interior += rhs.interior;
+        self.leaf += rhs.leaf;
+        self.empty += rhs.empty;
+    }
+}
+
+impl std::ops::Add for NodeCounts {
+    type Output = NodeCounts;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        NodeCounts {
+            interior: self.interior + rhs.interior,
+            leaf: self.leaf + rhs.leaf,
+            empty: self.empty + rhs.empty,
+        }
+    }
+}
+
 /// Binary Merkle Prefix Tree.
-#[derive(Debug)]
-struct Tree<K: Hash, V: Hash, H: Hasher> {
+#[derive(Debug, Clone)]
+pub struct Tree<K: Hash, V: Hash, H: Hasher> {
     /// The root node of a Merkle prefix tree for the given keys/values.
     root: Box<Node<H>>,
     /// This is where the actual keys and values are stored.
     values: HashMap<K, V>,
+    node_counts: NodeCounts,
+}
+
+impl<K: Hash, V: Hash, H: Hasher> Tree<K, V, H> {
+    pub fn values(&self) -> &HashMap<K, V> {
+        &self.values
+    }
 }
 
 impl<K: Hash, V: Hash, H: Hasher> Default for Tree<K, V, H>
@@ -264,14 +334,40 @@ where
 {
     fn default() -> Self {
         let root = Box::new(Node::empty(0, Default::default()));
+        let node_counts = NodeCounts {
+            interior: 0,
+            leaf: 0,
+            empty: 1,
+        };
         Self {
             root,
             values: Default::default(),
+            node_counts,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+impl<K, V, H> DataSized for Tree<K, V, H>
+where
+    K: Hash + DataSized,
+    V: Hash + DataSized,
+    H: Hasher,
+{
+    fn size(&self) -> crate::util::Information {
+        let mut size = assume_data_size_for_map(&self.values);
+        let hash_size = Information::new::<byte>(<H as digest::Digest>::output_size());
+        let interior_size = InteriorData::<H>::fixed_size() + hash_size;
+        size += interior_size * self.node_counts.interior_unsigned();
+        let leaf_size = LeafData::<H>::fixed_size() + hash_size;
+        size += leaf_size * self.node_counts.leaf_unsigned();
+        let empty_size = EmptyData::<H>::fixed_size() + hash_size;
+        size += empty_size * self.node_counts.empty_unsigned();
+        size
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(bound = "Output<H>: Serialize, V: Serialize")]
 enum ProofInner<V, H: Hasher> {
     Member(V),
     NonMemberEmpty(Output<H>),
@@ -281,15 +377,53 @@ enum ProofInner<V, H: Hasher> {
     },
 }
 
+impl<V, H: Hasher> DataSized for ProofInner<V, H>
+where
+    V: DataSized,
+{
+    fn size(&self) -> Information {
+        let hash_size = Information::new::<byte>(<H as Hasher>::output_size());
+        match self {
+            Member(v) => v.size(),
+            NonMemberEmpty(_) => hash_size,
+            NonMemberLeaf { .. } => hash_size * 2,
+        }
+    }
+}
+
 use ProofInner::*;
 
-#[derive(Debug, Clone)]
-struct Proof<V, H: Hasher> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(bound = "Output<H>: Serialize, ProofInner<V, H>: Serialize")]
+pub struct Proof<V, H: Hasher>
+where
+    Output<H>: Serialize,
+{
     /// Root to leaf.
     sibling_hashes: Vec<Output<H>>,
     /// H(key)
     key_index: Output<H>,
     inner: ProofInner<V, H>,
+}
+
+impl<V, H: Hasher> DataSized for Proof<V, H>
+where
+    ProofInner<V, H>: DataSized,
+{
+    fn size(&self) -> Information {
+        let hash_size = Information::new::<byte>(<H as Hasher>::output_size());
+        hash_size * (self.sibling_hashes.len() + 1) + self.inner.size()
+    }
+}
+
+impl<V, H: Hasher> Proof<V, H> {
+    pub fn get_unverified(&self) -> Option<&V> {
+        match &self.inner {
+            Member(value) => Some(value),
+            NonMemberEmpty(_) => None,
+            NonMemberLeaf { .. } => None,
+        }
+    }
 }
 
 impl<V: Clone, H: Hasher> Proof<&V, H> {
@@ -311,21 +445,27 @@ impl<V: Clone, H: Hasher> Proof<&V, H> {
     }
 }
 
-#[derive(Debug)]
-struct Digest<K, H: Hasher> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(bound = "Output<H>: Serialize")]
+pub struct Digest<K, H: Hasher> {
     value: Output<H>,
     _key: PhantomData<K>,
 }
 
+/// Insert a node recursively into the tree rooted at `current_node`.
+///
+/// Returns the *change* to the node counts.
 fn insert_recursive<H: Hasher>(
     current_node: &mut Node<H>,
     depth: usize,
     index: Output<H>,
     value_hash: Output<H>,
-) where
+) -> NodeCounts
+where
     ObjectHasher<H>: Hasher<OutputSize = H::OutputSize> + EndianUpdate,
     Output<H>: Copy,
 {
+    let mut delta_node_counts = NodeCounts::default();
     let new_node = match &mut current_node.inner {
         NodeData::Leaf(data) => {
             debug_assert_eq!(data.depth, depth);
@@ -347,6 +487,7 @@ fn insert_recursive<H: Hasher>(
                 // There will be interior nodes from `depth` until
                 // `shared_prefix_len`, at which point there will be the two
                 // leaf nodes.
+                delta_node_counts.leaf += 2;
                 let mut child = Box::new(Node::leaf(index, shared_prefix_len + 1, value_hash));
                 let mut sibling = Box::new(Node::leaf(
                     data.key_index,
@@ -355,17 +496,22 @@ fn insert_recursive<H: Hasher>(
                 ));
                 for i in ((depth + 1)..=shared_prefix_len).rev() {
                     let direction = Direction::from(get_bit_i(&index, i));
+                    delta_node_counts.interior += 1;
                     child = Box::new(Node::interior_for_direction(child, sibling, direction));
 
                     // Make the empty leaf for the next level up. It should
                     // differ from `index` at bit `i - 1`.
                     let mut other_index = mask(&index, i);
                     flip_bit_i(&mut other_index, i - 1);
+                    delta_node_counts.empty += 1;
                     sibling = Box::new(Node::empty(i, other_index));
                 }
 
                 // Create the interior node that will replace the existing leaf.
                 let direction = Direction::from(get_bit_i(&index, depth));
+
+                delta_node_counts.leaf += -1;
+                delta_node_counts.interior += 1;
                 Some(Node::interior_for_direction(child, sibling, direction))
             }
         }
@@ -373,12 +519,15 @@ fn insert_recursive<H: Hasher>(
             // Replace the empty node with a leaf node.
             debug_assert_eq!(data.depth, depth);
             debug_assert_eq!(mask(&data.prefix, depth), mask(&index, depth));
+            delta_node_counts.empty -= 1;
+            delta_node_counts.leaf += 1;
             Some(Node::leaf(index, depth, value_hash))
         }
         NodeData::Interior(inner) => {
             // Recurse down the tree. This node is unchanged (but will need to be rehashed).
             let direction = Direction::from(get_bit_i(&index, depth));
-            insert_recursive(inner.child_mut(direction), depth + 1, index, value_hash);
+            delta_node_counts =
+                insert_recursive(inner.child_mut(direction), depth + 1, index, value_hash);
             None
         }
     };
@@ -388,15 +537,17 @@ fn insert_recursive<H: Hasher>(
         *current_node = new_node;
     }
     current_node.rehash();
+
+    delta_node_counts
 }
 
 impl<K: Hash, V: Hash, H: Hasher> Tree<K, V, H>
 where
-    K: Eq + std::hash::Hash + std::fmt::Debug,
+    K: Eq + std::hash::Hash + Debug,
     ObjectHasher<H>: Hasher<OutputSize = H::OutputSize> + EndianUpdate,
     Output<H>: Copy,
 {
-    fn digest(&self) -> Digest<K, H> {
+    pub fn digest(&self) -> Digest<K, H> {
         Digest {
             value: self.root.hash,
             _key: PhantomData,
@@ -404,7 +555,7 @@ where
     }
 
     /// Look up the given key in the dictionary, along with a proof of correctness.
-    fn lookup(&self, key: &K) -> Proof<&V, H> {
+    pub fn lookup(&self, key: &K) -> Proof<&V, H> {
         let key_index = hash::<_, H>(key);
         let mut sibling_hashes = Vec::<Output<H>>::new();
         let mut depth = 0usize;
@@ -448,11 +599,12 @@ where
         }
     }
 
-    fn insert(&mut self, key: K, value: V) {
+    pub fn insert(&mut self, key: K, value: V) {
         let index = hash::<_, H>(&key);
         let value_hash = hash::<_, H>(&value);
 
-        insert_recursive(&mut self.root, 0usize, index, value_hash);
+        let delta_node_counts = insert_recursive(&mut self.root, 0usize, index, value_hash);
+        self.node_counts += delta_node_counts;
 
         self.values.insert(key, value);
     }
@@ -522,13 +674,13 @@ fn check_valid_non_member_empty<H: Hasher>(
 
 impl<K, H: Hasher> Digest<K, H> {
     /// Verify a lookup proof for key `key` (whether `key` is present or not), returning the result.
-    fn verify<V>(&self, key: &K, result: Proof<V, H>) -> Result<Option<V>, VerificationError<H>>
+    pub fn verify<V>(&self, key: &K, result: Proof<V, H>) -> Result<Option<V>, VerificationError<H>>
     where
         K: Hash,
         V: Hash,
         ObjectHasher<H>: Hasher<OutputSize = H::OutputSize> + EndianUpdate,
         Output<H>: Copy,
-        H: std::fmt::Debug,
+        H: Debug,
     {
         let mut depth = result.sibling_hashes.len();
         let key_index = hash(key);
@@ -671,5 +823,46 @@ mod tests {
             }
             assert!(digest.verify(&key, proof).is_err());
         }
+
+        /// Tests that the manually-updated `NodeCounts` are the same as the
+        /// ones we get by actually counting the nodes.
+        #[test]
+        fn test_tree_node_counts(insertions in insertions()) {
+            let mut tree = Tree::<Key, Value, CRHF>::default();
+            // Use a hash map as a reference for the expected result after the given insertions.
+            let mut map = HashMap::<Key, Value>::default();
+
+            for (key, value) in insertions {
+                tree.insert(key, value);
+                map.insert(key, value);
+            }
+
+            fn count_nodes<H: Hasher>(node: &Node<H>) -> NodeCounts {
+                match &node.inner {
+                    NodeData::Leaf(_) => NodeCounts {
+                        leaf: 1,
+                        ..Default::default()
+                    },
+                    NodeData::Empty(_) => NodeCounts {
+                        empty: 1,
+                        ..Default::default()
+                    },
+                    NodeData::Interior(data) => {
+                        count_nodes(&data.left)
+                            + count_nodes(&data.right)
+                            + NodeCounts {
+                                interior: 1,
+                                ..Default::default()
+                            }
+                    }
+                }
+            }
+
+            dbg!(&tree);
+            assert_eq!(tree.node_counts.leaf, isize::try_from(map.len()).unwrap());
+            let node_counts = count_nodes(&tree.root);
+            assert_eq!(tree.node_counts, node_counts);
+        }
+
     }
 }

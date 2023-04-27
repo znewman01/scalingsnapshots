@@ -3,12 +3,8 @@ use std::collections::HashMap;
 use crate::util::{DataSized, FixedDataSized};
 use serde::Serialize;
 
-#[cfg(test)]
-use proptest_derive::Arbitrary;
-
 use crate::{authenticator::Revision, log::PackageId, util::Information};
 
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Snapshot {
     package_revisions: HashMap<PackageId, Revision>,
@@ -34,7 +30,6 @@ impl DataSized for Log {
 /// A Hackage-style authenticator.
 ///
 /// That is, an authenticator with a
-#[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
     log: Log,

@@ -1,15 +1,12 @@
 mod hackage;
 mod insecure;
 mod mercury_diff;
-//. mod merkle;
+mod merkle;
 mod rsa;
 mod sparse_merkle;
 mod vanilla_tuf;
 
-use std::{
-    collections::HashMap,
-    num::{NonZeroU64, TryFromIntError},
-};
+use std::{collections::HashMap, num::NonZeroU64};
 
 use serde::Serialize;
 
@@ -28,6 +25,7 @@ pub use sparse_merkle::Authenticator as SparseMerkle;
 pub type Rsa = rsa::Authenticator<RsaAccumulator<RsaGroup>>;
 pub type RsaPool = rsa::PoolAuthenticator<RsaAccumulator<RsaGroup>>;
 pub use vanilla_tuf::Authenticator as VanillaTuf;
+pub type MerkleBpt = merkle::Authenticator<sha3::Sha3_256>;
 
 use crate::{log::PackageId, util::byte, util::DataSized};
 
@@ -61,14 +59,23 @@ impl Default for Revision {
     }
 }
 
+impl digest_hash::Hash for Revision {
+    fn hash<H>(&self, digest: &mut H)
+    where
+        H: digest_hash::EndianUpdate,
+    {
+        let num: u64 = self.0.into();
+        num.hash(digest);
+    }
+}
+
 impl Revision {
-    fn increment(&mut self) {
-        self.0 = NonZeroU64::try_from(self.0.get() + 1).unwrap();
+    fn incremented(&self) -> Self {
+        Self(NonZeroU64::try_from(self.0.get() + 1).expect("incrementing"))
     }
 
-    fn decrement(&mut self) -> Result<(), TryFromIntError> {
-        self.0 = NonZeroU64::try_from(self.0.get() + 1)?;
-        Ok(())
+    fn increment(&mut self) {
+        *self = self.incremented();
     }
 }
 
