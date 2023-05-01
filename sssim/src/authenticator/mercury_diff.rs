@@ -1,3 +1,54 @@
+//! The Mercury paper suggests using delta compression [RFC 3229] to transmit
+//! the (package->revision) map to clients.
+//!
+//! This is an implementation simulating delta compression.
+//!
+//! It works by storing each version of the (package->revision) map (by their
+//! index).
+//!
+//! This approach has a few problems not mentioned in Mercury:
+//!
+//! 1. O(p^2) storage for p packages: we store the current (package->revision)
+//!    map, and a previous map which had all-but-the-lastest package in it,
+//!    and...
+//!
+//! 2. It's not CDN-friendly: the server must compute diffs on-the-fly. (In
+//!    principle a CDN *could* do this, but in practice none that I'm familiar
+//!    with does.)
+//!
+//! There are a few alternatives worth considering:
+//!
+//! 1. Store a log of each update. When a client requests a catch-up from index
+//!    i, serve them all the updates from i up until the present.
+//!
+//!    This *is* CDN-friendly now. It's inefficient in cases where the same
+//!    package receieves many publication events, as each one appears in the
+//!    diff.
+//!
+//!    (This is the "hackage" method in hackage.rs.)
+//!
+//! 2. Store a log of each update. When the client requests a catch-up from
+//!    index i, the server computes the diff (basically, cutting out packages
+//!    that appear multiple times).
+//!
+//!    This is much more storage-efficient than the approach in this file, but
+//!    is still not CDN-friendly (even in principle).
+//!
+//! 3. Store the *deltas* for each prior index. Now, when a package is
+//!    published, we must update each prior delta.
+//!
+//!    This is almost as expensive as storing each version of the map, but *is*
+//!    CDN-friendly.
+//!
+//! 4. Store the deltas between *carefully selected indexes*.
+//!
+//!    That is, instead of a delta between each prior index and the current index,
+//!    you can store a delta from a->b and another from b->c. Then, the client
+//!    will combine a small number of deltas to get their update.
+//!
+//!    This is once again CDN-friendly, but has a big performance advantage over
+//!    (3). The optimal way to do this is a skiplist, so that there are O(log u)
+//!    deltas between any two indexes.
 use crate::util::{DataSized, FixedDataSized};
 use std::collections::HashMap;
 
@@ -43,7 +94,7 @@ impl DataSized for Snapshot {
 #[cfg_attr(test, derive(Arbitrary))]
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct Authenticator {
-    // TODO(must): replace with a skiplist
+    // TODO(meh): replace with a skiplist
     snapshots: HashMap<u64, Snapshot>,
     snapshot: Snapshot,
 }
