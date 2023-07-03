@@ -2,7 +2,6 @@
 //!
 //! See [BBF18]: https://eprint.iacr.org/2018/1188.pdf
 #![allow(non_snake_case)]
-use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use crate::hash_to_prime::{hash_to_prime, IntegerHasher};
@@ -118,7 +117,7 @@ impl<G: Group + TryFrom<Integer> + 'static> ZKUniverse<G> {
         let alpha = self.fiat_shamir3(&instance, &g, &z, &ell);
 
         // Verifier accepts if r < ell and Q^ell u^r g^(alpha r) = w z^(alpha).
-        let lhs = Q * ell.borrow() + u * &r + g * &(alpha.clone() * r.clone());
+        let lhs = Q * ell.as_ref() + u * &r + g * &(alpha.clone() * r.clone());
         let rhs = w + z * &alpha;
         &r < ell.inner() && lhs == rhs
     }

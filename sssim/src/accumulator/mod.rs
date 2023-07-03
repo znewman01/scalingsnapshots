@@ -5,8 +5,6 @@ pub mod rsa;
 
 //pub use rsa_optimized::CachingAccumulator;
 
-pub use rsa::{RsaAccumulator, RsaAccumulatorDigest};
-
 use crate::{multiset::MultiSet, primitives::Prime, util::Information};
 
 pub trait Accumulator {

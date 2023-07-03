@@ -11,7 +11,7 @@ use std::{collections::HashMap, num::NonZeroU64};
 use serde::Serialize;
 
 use crate::{
-    accumulator::rsa::RsaAccumulator,
+    accumulator::rsa::Accumulator as RsaAccumulator,
     util::{FixedDataSized, Information},
 };
 

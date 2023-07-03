@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use rug::Integer;
 use thiserror::Error;
 
@@ -11,12 +9,10 @@ pub enum Error {
     Negative(Integer),
 }
 
-pub trait NonZero: Borrow<Integer> + Into<Integer> {}
+pub trait NonZero: AsRef<Integer> + Into<Integer> {}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct NonZeroInteger {
-    value: Integer,
-}
+pub struct NonZeroInteger(Integer);
 
 impl NonZero for NonZeroInteger {}
 
@@ -27,28 +23,26 @@ impl TryFrom<Integer> for NonZeroInteger {
         if value == 0 {
             return Err(Error::Zero);
         }
-        Ok(NonZeroInteger { value })
+        Ok(NonZeroInteger(value))
     }
 }
 
 impl From<NonZeroInteger> for Integer {
     fn from(value: NonZeroInteger) -> Integer {
-        value.value
+        value.0
     }
 }
 
-impl Borrow<Integer> for NonZeroInteger {
-    fn borrow(&self) -> &Integer {
-        &self.value
+impl AsRef<Integer> for NonZeroInteger {
+    fn as_ref(&self) -> &Integer {
+        &self.0
     }
 }
 
-pub trait NonNegative: Borrow<Integer> + Into<Integer> {}
+pub trait NonNegative: AsRef<Integer> + Into<Integer> {}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct NonNegativeInteger {
-    value: Integer,
-}
+pub struct NonNegativeInteger(Integer);
 
 impl NonNegative for NonNegativeInteger {}
 
@@ -59,28 +53,26 @@ impl TryFrom<Integer> for NonNegativeInteger {
         if value < 0 {
             return Err(Error::Negative(value));
         }
-        Ok(NonNegativeInteger { value })
+        Ok(NonNegativeInteger(value))
     }
 }
 
 impl From<NonNegativeInteger> for Integer {
     fn from(value: NonNegativeInteger) -> Integer {
-        value.value
+        value.0
     }
 }
 
-impl Borrow<Integer> for NonNegativeInteger {
-    fn borrow(&self) -> &Integer {
-        &self.value
+impl AsRef<Integer> for NonNegativeInteger {
+    fn as_ref(&self) -> &Integer {
+        &self.0
     }
 }
 
 pub trait Positive: NonNegative + NonZero {}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct PositiveInteger {
-    value: Integer,
-}
+pub struct PositiveInteger(Integer);
 
 impl NonNegative for PositiveInteger {}
 impl NonZero for PositiveInteger {}
@@ -93,19 +85,19 @@ impl TryFrom<Integer> for PositiveInteger {
         match value.cmp(&Integer::ZERO) {
             Less => Err(Error::Negative(value)),
             Equal => Err(Error::Zero),
-            Greater => Ok(PositiveInteger { value }),
+            Greater => Ok(PositiveInteger(value)),
         }
     }
 }
 
 impl From<PositiveInteger> for Integer {
     fn from(value: PositiveInteger) -> Integer {
-        value.value
+        value.0
     }
 }
 
-impl Borrow<Integer> for PositiveInteger {
-    fn borrow(&self) -> &Integer {
-        &self.value
+impl AsRef<Integer> for PositiveInteger {
+    fn as_ref(&self) -> &Integer {
+        &self.0
     }
 }

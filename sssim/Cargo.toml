@@ -48,3 +48,7 @@ rustflags = ["-Clink-arg=-fuse-ld=lld", "-Clink-arg=-Wl,--no-rosegment"]
 proptest = "1.0.0"
 proptest-derive = "0.3.0"
 criterion = "0.3"
+
+[[bench]]
+name = "multiply"
+harness = false

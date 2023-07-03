@@ -1,5 +1,3 @@
-use std::borrow::Borrow;
-
 use rug::Integer;
 use serde::Serialize;
 use thiserror::Error;
@@ -20,9 +18,7 @@ pub struct CompositeError {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize)]
-pub struct Prime {
-    value: Integer,
-}
+pub struct Prime(Integer);
 
 impl NonNegative for Prime {}
 impl NonZero for Prime {}
@@ -30,17 +26,18 @@ impl NonZero for Prime {}
 impl Prime {
     /// e.g. for a prime power
     pub fn new_unchecked(value: Integer) -> Self {
-        Self { value }
+        Self(value)
     }
 
     pub fn inner(&self) -> &Integer {
-        &self.value
+        &self.0
     }
 
     pub fn into_inner(self) -> Integer {
-        self.value
+        self.0
     }
 }
+
 impl TryFrom<Integer> for Prime {
     type Error = CompositeError;
 
@@ -48,24 +45,41 @@ impl TryFrom<Integer> for Prime {
         if value.is_probably_prime(MILLER_RABIN_ITERS) == rug::integer::IsPrime::No {
             return Err(CompositeError { value });
         }
-        Ok(Prime { value })
+        Ok(Prime(value))
     }
 }
 
 impl DataSized for Prime {
     fn size(&self) -> Information {
-        self.value.size()
+        self.0.size()
     }
 }
 
 impl From<Prime> for Integer {
     fn from(prime: Prime) -> Self {
-        prime.value
+        prime.0
     }
 }
 
-impl Borrow<Integer> for Prime {
-    fn borrow(&self) -> &Integer {
-        &self.value
+impl AsRef<Integer> for Prime {
+    fn as_ref(&self) -> &Integer {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+use proptest::prelude::*;
+
+#[cfg(test)]
+impl Arbitrary for Prime {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        prop::sample::select(vec![2u32, 3, 5, 7, 11])
+            .prop_map(Integer::from)
+            .prop_map(Prime::try_from)
+            .prop_map(Result::unwrap)
+            .boxed()
     }
 }

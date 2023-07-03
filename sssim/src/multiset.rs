@@ -102,7 +102,7 @@ impl<T: Hash + Eq> MultiSet<T> {
     }
 }
 
-impl<T: Hash + Eq + Clone + Default> From<Vec<T>> for MultiSet<T> {
+impl<T: Hash + Eq + Clone> From<Vec<T>> for MultiSet<T> {
     fn from(values: Vec<T>) -> Self {
         let mut multiset = MultiSet::default();
         for value in values.iter().cloned() {

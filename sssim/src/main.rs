@@ -697,11 +697,7 @@ fn main() -> io::Result<()> {
         println!("\nauthenticator: {authenticator}");
 
         let packages = packages.clone();
-        let batch_sizes = if args.threads == 1 {
-            vec![100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-        } else {
-            vec![100]
-        };
+        let batch_sizes = vec![100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
         let result = match authenticator.as_str() {
             "insecure" => run::<authenticator::Insecure>(packages, &db, args.threads),
             "hackage" => run::<authenticator::Hackage>(packages, &db, args.threads),

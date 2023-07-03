@@ -1,5 +1,7 @@
 # Scaling Snapshots
 
+WARNING: experimental research code, not for production use.
+
 ## Setup
 
 ### With Nix

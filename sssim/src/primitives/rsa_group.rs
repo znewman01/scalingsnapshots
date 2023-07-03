@@ -26,28 +26,24 @@ static MODULUS: Lazy<Integer> = Lazy::new(|| {
 /// A couple of false positives (not co-prime with the modulus), but hitting
 /// them implies that we've factored RSA-2048.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize)]
-pub struct Rsa2048Group {
-    value: Integer,
-}
+pub struct Rsa2048Group(Integer);
 
 impl Rsa2048Group {
     /// Check that this is a valid group element.
     fn check_value(&self) -> bool {
-        0u8 < self.value && &self.value <= MODULUS.deref()
+        0u8 < self.0 && &self.0 <= MODULUS.deref()
     }
 }
 
 impl DataSized for Rsa2048Group {
     fn size(&self) -> Information {
-        self.value.size()
+        self.0.size()
     }
 }
 
 impl Default for Rsa2048Group {
     fn default() -> Self {
-        Self {
-            value: Integer::from(65337),
-        }
+        Self(Integer::from(65337))
     }
 }
 
@@ -55,7 +51,7 @@ impl TryFrom<Integer> for Rsa2048Group {
     type Error = ();
 
     fn try_from(value: Integer) -> Result<Self, Self::Error> {
-        let x = Self { value };
+        let x = Self(value);
         match x.check_value() {
             true => Ok(x),
             false => Err(()),
@@ -90,8 +86,8 @@ impl Add<Self> for Rsa2048Group {
 
 impl AddAssign<Self> for Rsa2048Group {
     fn add_assign(&mut self, rhs: Self) {
-        self.value *= rhs.value;
-        self.value %= MODULUS.deref();
+        self.0 *= rhs.0;
+        self.0 %= MODULUS.deref();
         assert!(self.check_value());
     }
 }
@@ -107,7 +103,7 @@ impl Mul<&Integer> for Rsa2048Group {
 
 impl MulAssign<&Integer> for Rsa2048Group {
     fn mul_assign(&mut self, rhs: &Integer) {
-        self.value
+        self.0
             .pow_mod_mut(rhs, MODULUS.deref())
             .expect("exp > 0, MODULUS > 0");
         assert!(self.check_value());
@@ -133,7 +129,7 @@ impl Group for Rsa2048Group {
     }
 
     fn bytes() -> usize {
-        MAX_VALUE.value.significant_digits::<u8>()
+        MAX_VALUE.0.significant_digits::<u8>()
     }
 }
 
